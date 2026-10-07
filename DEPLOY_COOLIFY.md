@@ -22,20 +22,31 @@ Cadastre antes do primeiro deploy:
 
 Após o primeiro deploy bem-sucedido, altere `SEED_ON_DEPLOY` para `false` e faça novo deploy. Assim, migrations continuam automáticas sem redefinir senhas ou dados demonstrativos.
 
-## 3. Domínio
+## 3. Acesso direto pelo IP
+
+O Compose publica a aplicação em `0.0.0.0:${APP_PORT:-3000}`. Para acessar sem domínio, configure:
+
+- `APP_PORT=3000`
+- `SESSION_COOKIE_SECURE=false`
+
+Libere a porta TCP 3000 no firewall da VPS/provedor e acesse `http://IP_PUBLICO_DA_VPS:3000`. Se a porta 3000 já estiver ocupada, use outra em `APP_PORT`, por exemplo `3001`, e acesse essa porta.
+
+Esse modo trafega credenciais e dados sem TLS e deve ser apenas temporário. O PostgreSQL continua sem porta pública.
+
+## 4. Domínio e HTTPS
 
 No componente `app`, configure o domínio como `https://pdv.seu-dominio.com:3000`. O sufixo indica ao proxy do Coolify a porta interna; usuários continuam acessando HTTPS normalmente.
 
-Não publique portas para `db` ou `app`. O Compose usa apenas a rede interna do recurso.
+Ao migrar para HTTPS, defina `SESSION_COOKIE_SECURE=true` e remova a publicação de `ports` do serviço `app` para voltar a aceitar acesso somente pelo proxy.
 
-## 4. Persistência e backups
+## 5. Persistência e backups
 
 - `postgres_data`: dados do PostgreSQL.
 - `product_storage`: fotos dos produtos.
 
 Configure um backup PostgreSQL diário, com retenção e cópia S3 externa. Configure também backup periódico do volume `product_storage`. Um volume persistente evita perda em um redeploy, mas não substitui backup. Faça ao menos um teste real de restauração.
 
-## 5. Verificação pós-deploy
+## 6. Verificação pós-deploy
 
 1. Confirme que `db` e `app` estão saudáveis e `migrate` terminou com código zero.
 2. Acesse `/api/health`; deve retornar `status: ok` e `database: ok`.

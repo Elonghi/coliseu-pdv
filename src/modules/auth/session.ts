@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
+import { shouldUseSecureSessionCookie } from "@/lib/security";
 
 export type SessionUser = { id: string; name: string; email: string; role: "ADMIN" | "OPERATOR" };
 const COOKIE_NAME = "coliseu_session";
@@ -14,7 +15,7 @@ export async function createSession(userId: string) {
   const ttlHours = Math.max(1, Number(process.env.SESSION_TTL_HOURS ?? 12));
   const expires = new Date(Date.now() + ttlHours * 3_600_000);
   await pool.query("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)", [hashToken(token), userId, expires]);
-  (await cookies()).set(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", expires });
+  (await cookies()).set(COOKIE_NAME, token, { httpOnly: true, secure: shouldUseSecureSessionCookie(), sameSite: "lax", path: "/", expires });
 }
 
 export async function destroySession() {

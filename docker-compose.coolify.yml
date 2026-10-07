@@ -44,10 +44,11 @@ services:
       DATABASE_URL: postgresql://coliseu:${SERVICE_PASSWORD_64_POSTGRES}@db:5432/coliseu
       STORAGE_PATH: /app/storage
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${SERVICE_REALBASE64_32_NEXT_SERVER_ACTIONS}
       SERVICE_URL_APP_3000: /
-    expose:
-      - "3000"
+    ports:
+      - "${APP_PORT:-3000}:3000"
     volumes:
       - product_storage:/app/storage
     depends_on:
