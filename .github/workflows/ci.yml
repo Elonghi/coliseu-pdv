@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: coliseu_test
+          POSTGRES_USER: coliseu
+          POSTGRES_PASSWORD: coliseu_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U coliseu -d coliseu_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://coliseu:coliseu_test@localhost:5432/coliseu_test
+      TEST_DATABASE_URL: postgresql://coliseu:coliseu_test@localhost:5432/coliseu_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev

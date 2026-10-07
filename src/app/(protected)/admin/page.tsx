@@ -1,0 +1,11 @@
+import { DashboardCharts } from "@/components/dashboard-charts";
+import { formatMoney } from "@/lib/money";
+import { getDashboard } from "@/modules/dashboard/queries";
+
+export const dynamic = "force-dynamic";
+export default async function DashboardPage() {
+  const data = await getDashboard(); const k = data.kpis;
+  const variation=k.previous_month_cents?`${(((k.month_cents-k.previous_month_cents)/k.previous_month_cents)*100).toFixed(1)}% vs. mês anterior`:"Sem base anterior";
+  const cards = [["Hoje",formatMoney(k.today_cents),""],["Semana",formatMoney(k.week_cents),""],["Mês",formatMoney(k.month_cents),variation],["Ticket médio",formatMoney(k.avg_cents),""],["Vendas hoje",String(k.today_count),""],["Vendas no mês",String(k.month_count),""]];
+  return <div className="grid gap-6"><header><p className="text-sm text-gray-500 font-bold">VISÃO GERAL</p><h1 className="text-3xl font-black">Dashboard</h1></header><section className="grid sm:grid-cols-2 xl:grid-cols-6 gap-3">{cards.map(([label,value,detail]) => <article className="card p-4" key={label}><p className="text-xs text-gray-500 font-bold uppercase">{label}</p><strong className="text-xl block mt-2">{value}</strong>{detail&&<small className="text-gray-500">{detail}</small>}</article>)}</section><section className="grid sm:grid-cols-2 gap-3"><article className="card p-4 border-l-4 border-l-amber-400"><p className="text-gray-500 text-sm">Estoque baixo</p><b className="text-2xl">{data.stock.low}</b></article><article className="card p-4 border-l-4 border-l-red-500"><p className="text-gray-500 text-sm">Sem estoque</p><b className="text-2xl">{data.stock.empty}</b></article></section><DashboardCharts daily={data.daily} payments={data.payments}/><section className="card"><div className="p-5"><h2 className="font-black">Produtos mais vendidos — mês</h2></div><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Quantidade</th><th>Faturamento</th><th>Margem aprox.</th></tr></thead><tbody>{data.top.map(p => <tr key={p.name}><td className="font-bold">{p.name}</td><td>{p.quantity}</td><td>{formatMoney(p.revenue_cents)}</td><td>{formatMoney(p.margin_cents)}</td></tr>)}{!data.top.length && <tr><td colSpan={4}>Nenhuma venda no período.</td></tr>}</tbody></table></div></section></div>;
+}

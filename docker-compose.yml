@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: coliseu
+      POSTGRES_USER: coliseu
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-coliseu}
+    ports: ["${POSTGRES_PORT:-55432}:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coliseu -d coliseu"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  migrate:
+    build: { context: ., target: migrate }
+    environment:
+      DATABASE_URL: postgresql://coliseu:${POSTGRES_PASSWORD:-coliseu}@db:5432/coliseu
+    depends_on:
+      db: { condition: service_healthy }
+  app:
+    build: { context: ., target: runner }
+    environment:
+      DATABASE_URL: postgresql://coliseu:${POSTGRES_PASSWORD:-coliseu}@db:5432/coliseu
+      STORAGE_PATH: /app/storage
+      SESSION_TTL_HOURS: 12
+    ports: ["3000:3000"]
+    volumes: ["product_storage:/app/storage"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+volumes:
+  postgres_data:
+  product_storage:

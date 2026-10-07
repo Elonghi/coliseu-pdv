@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: coliseu
+      POSTGRES_USER: coliseu
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coliseu -d coliseu"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://coliseu:${SERVICE_PASSWORD_64_POSTGRES}@db:5432/coliseu
+      SEED_ON_DEPLOY: ${SEED_ON_DEPLOY:-false}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@coliseu.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_OPERATOR_EMAIL: ${SEED_OPERATOR_EMAIL:-operador@coliseu.local}
+      SEED_OPERATOR_PASSWORD: ${SEED_OPERATOR_PASSWORD:-}
+    command: ["sh", "-c", "npm run db:migrate && if [ \"$$SEED_ON_DEPLOY\" = \"true\" ]; then npm run db:seed; fi"]
+    depends_on:
+      db:
+        condition: service_healthy
+    exclude_from_hc: true
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+      args:
+        NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${SERVICE_REALBASE64_32_NEXT_SERVER_ACTIONS}
+    environment:
+      DATABASE_URL: postgresql://coliseu:${SERVICE_PASSWORD_64_POSTGRES}@db:5432/coliseu
+      STORAGE_PATH: /app/storage
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${SERVICE_REALBASE64_32_NEXT_SERVER_ACTIONS}
+      SERVICE_URL_APP_3000: /
+    expose:
+      - "3000"
+    volumes:
+      - product_storage:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  product_storage:
