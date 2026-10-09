@@ -1,6 +1,15 @@
 # Coliseu PDV
 
-Sistema de frente de caixa e gestão para uma loja, com múltiplos operadores, estoque transacional, pagamentos divididos e dashboard.
+Sistema de frente de caixa e gestão para uma loja, com múltiplos operadores, estoque transacional, pagamentos divididos, financeiro e créditos de jogadores.
+
+## Funcionalidades
+
+- Contas a pagar e receber com parcelas por prazos em dias (`30/60/90`), vencimentos, liquidações parciais e histórico.
+- Registro de forma, data e pessoa relacionada a cada pagamento ou recebimento.
+- Cadastro de jogadores e extrato imutável de créditos, aceitando saldo positivo ou negativo.
+- Crédito do jogador e pagamento futuro no PDV, inclusive combinados com PIX, dinheiro ou cartões.
+- Pagamento futuro gera automaticamente conta a receber e aparece no fluxo financeiro.
+- Dashboard separa faturamento de vendas do fluxo de caixa realizado, evitando dupla contagem.
 
 ## Desenvolvimento
 

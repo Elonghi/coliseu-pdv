@@ -1,9 +1,12 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, check, date, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["ADMIN", "OPERATOR"]);
 export const saleStatus = pgEnum("sale_status", ["CONFIRMED", "CANCELED"]);
 export const stockMovementType = pgEnum("stock_movement_type", ["INITIAL", "MANUAL_IN", "MANUAL_ADJUSTMENT", "SALE", "SALE_CANCELLATION", "RETURN"]);
+export const financialAccountType = pgEnum("financial_account_type", ["PAYABLE", "RECEIVABLE"]);
+export const financialStatus = pgEnum("financial_status", ["OPEN", "PARTIAL", "SETTLED", "CANCELED"]);
+export const playerCreditMovementType = pgEnum("player_credit_movement_type", ["MANUAL", "SALE_CREDIT", "FUTURE_CHARGE", "FUTURE_PAYMENT", "SALE_REVERSAL"]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -55,6 +58,17 @@ export const products = pgTable("products", {
   index("products_name_idx").on(t.name), index("products_active_idx").on(t.active), index("products_category_idx").on(t.categoryId),
 ]);
 
+export const players = pgTable("players", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 160 }).notNull(),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 40 }),
+  notes: text("notes"),
+  creditBalanceCents: integer("credit_balance_cents").default(0).notNull(),
+  active: boolean("active").default(true).notNull(),
+  ...timestamps,
+}, (t) => [index("players_name_idx").on(t.name), index("players_active_idx").on(t.active), index("players_email_idx").on(t.email)]);
+
 export const sales = pgTable("sales", {
   id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
   operatorId: uuid("operator_id").notNull().references(() => users.id, { onDelete: "restrict" }),
@@ -80,9 +94,62 @@ export const paymentMethods = pgTable("payment_methods", {
 export const payments = pgTable("payments", {
   id: uuid("id").defaultRandom().primaryKey(), saleId: integer("sale_id").notNull().references(() => sales.id, { onDelete: "restrict" }),
   methodCode: varchar("method_code", { length: 30 }).notNull().references(() => paymentMethods.code, { onDelete: "restrict" }),
+  playerId: uuid("player_id").references(() => players.id, { onDelete: "restrict" }),
+  dueDate: date("due_date"),
   amountAppliedCents: integer("amount_applied_cents").notNull(), amountReceivedCents: integer("amount_received_cents"), changeCents: integer("change_cents").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [check("payments_amount_positive", sql`${t.amountAppliedCents} > 0 AND ${t.changeCents} >= 0`), uniqueIndex("payments_sale_method_uidx").on(t.saleId, t.methodCode), index("payments_method_idx").on(t.methodCode)]);
+}, (t) => [check("payments_amount_positive", sql`${t.amountAppliedCents} > 0 AND ${t.changeCents} >= 0`), uniqueIndex("payments_sale_method_uidx").on(t.saleId, t.methodCode), index("payments_method_idx").on(t.methodCode), index("payments_player_idx").on(t.playerId)]);
+
+export const financialAccounts = pgTable("financial_accounts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  type: financialAccountType("type").notNull(),
+  description: varchar("description", { length: 220 }).notNull(),
+  counterpartyName: varchar("counterparty_name", { length: 180 }).notNull(),
+  playerId: uuid("player_id").references(() => players.id, { onDelete: "restrict" }),
+  saleId: integer("sale_id").references(() => sales.id, { onDelete: "restrict" }),
+  issueDate: date("issue_date").notNull(),
+  totalCents: integer("total_cents").notNull(),
+  status: financialStatus("status").default("OPEN").notNull(),
+  notes: text("notes"),
+  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  ...timestamps,
+}, (t) => [check("financial_accounts_total_positive", sql`${t.totalCents} > 0`), index("financial_accounts_type_status_idx").on(t.type, t.status), index("financial_accounts_sale_idx").on(t.saleId), index("financial_accounts_player_idx").on(t.playerId), index("financial_accounts_created_idx").on(t.createdAt)]);
+
+export const financialInstallments = pgTable("financial_installments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => financialAccounts.id, { onDelete: "restrict" }),
+  installmentNumber: integer("installment_number").notNull(),
+  dueDate: date("due_date").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  settledCents: integer("settled_cents").default(0).notNull(),
+  status: financialStatus("status").default("OPEN").notNull(),
+  ...timestamps,
+}, (t) => [check("financial_installments_values_valid", sql`${t.installmentNumber} > 0 AND ${t.amountCents} > 0 AND ${t.settledCents} >= 0 AND ${t.settledCents} <= ${t.amountCents}`), uniqueIndex("financial_installments_account_number_uidx").on(t.accountId, t.installmentNumber), index("financial_installments_due_status_idx").on(t.dueDate, t.status)]);
+
+export const financialSettlements = pgTable("financial_settlements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  installmentId: uuid("installment_id").notNull().references(() => financialInstallments.id, { onDelete: "restrict" }),
+  amountCents: integer("amount_cents").notNull(),
+  methodCode: varchar("method_code", { length: 30 }).notNull().references(() => paymentMethods.code, { onDelete: "restrict" }),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  personName: varchar("person_name", { length: 180 }),
+  notes: text("notes"),
+  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [check("financial_settlements_amount_positive", sql`${t.amountCents} > 0`), index("financial_settlements_installment_idx").on(t.installmentId), index("financial_settlements_occurred_idx").on(t.occurredAt)]);
+
+export const playerCreditMovements = pgTable("player_credit_movements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  playerId: uuid("player_id").notNull().references(() => players.id, { onDelete: "restrict" }),
+  type: playerCreditMovementType("type").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  balanceAfterCents: integer("balance_after_cents").notNull(),
+  saleId: integer("sale_id").references(() => sales.id, { onDelete: "restrict" }),
+  financialAccountId: uuid("financial_account_id").references(() => financialAccounts.id, { onDelete: "restrict" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [check("player_credit_movements_nonzero", sql`${t.amountCents} <> 0`), index("player_credit_movements_player_date_idx").on(t.playerId, t.createdAt), index("player_credit_movements_sale_idx").on(t.saleId), index("player_credit_movements_account_idx").on(t.financialAccountId)]);
 
 export const stockMovements = pgTable("stock_movements", {
   id: uuid("id").defaultRandom().primaryKey(), productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "restrict" }),

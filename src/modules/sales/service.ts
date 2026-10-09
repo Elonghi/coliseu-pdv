@@ -2,6 +2,7 @@ import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
 import { calculateDiscount, saleNumber } from "@/lib/money";
 import { checkoutSchema, type CheckoutInput } from "./schemas";
+import { applyPlayerCreditMovement } from "@/modules/players/service";
 
 type LockedProduct = { id: string; sku: string; name: string; active: boolean; stock_quantity: number; sale_price_cents: number; cost_cents: number; max_discount_bps: number; unit_code: string };
 
@@ -37,7 +38,12 @@ export async function createSale(input: CheckoutInput, operatorId: string) {
       if (payment.methodCode === "CASH") {
         if ((payment.amountReceivedCents ?? 0) < payment.amountAppliedCents) throw new AppError("Valor recebido em dinheiro é insuficiente.", 422, "CASH_INSUFFICIENT");
       } else if (payment.amountReceivedCents !== undefined) throw new AppError("Valor recebido só é permitido para dinheiro.", 422, "INVALID_PAYMENT");
+      if (["PLAYER_CREDIT", "FUTURE"].includes(payment.methodCode) && !payment.playerId) throw new AppError("Selecione o jogador para crédito ou pagamento futuro.", 422, "PLAYER_REQUIRED");
+      if (payment.methodCode === "FUTURE" && !payment.dueDate) throw new AppError("Informe o vencimento do pagamento futuro.", 422, "DUE_DATE_REQUIRED");
+      if (!["PLAYER_CREDIT", "FUTURE"].includes(payment.methodCode) && (payment.playerId || payment.dueDate)) throw new AppError("Jogador e vencimento só são permitidos em crédito ou pagamento futuro.", 422, "INVALID_PAYMENT");
     }
+    const specialPlayers = new Set(parsed.payments.filter(p => ["PLAYER_CREDIT", "FUTURE"].includes(p.methodCode)).map(p => p.playerId));
+    if (specialPlayers.size > 1) throw new AppError("Use o mesmo jogador nas formas de crédito desta venda.", 422, "PLAYER_MISMATCH");
     const saleResult = await client.query<{ id: number; created_at: Date }>("INSERT INTO sales (operator_id,subtotal_cents,discount_cents,total_cents) VALUES ($1,$2,$3,$4) RETURNING id,created_at", [operatorId, subtotalCents, discountCents, totalCents]);
     const sale = saleResult.rows[0];
     for (const item of calculated) {
@@ -51,7 +57,18 @@ export async function createSale(input: CheckoutInput, operatorId: string) {
     for (const payment of parsed.payments) {
       const received = payment.methodCode === "CASH" ? payment.amountReceivedCents! : null;
       const change = payment.methodCode === "CASH" ? received! - payment.amountAppliedCents : 0;
-      await client.query("INSERT INTO payments (sale_id,method_code,amount_applied_cents,amount_received_cents,change_cents) VALUES ($1,$2,$3,$4,$5)", [sale.id, payment.methodCode, payment.amountAppliedCents, received, change]);
+      await client.query("INSERT INTO payments (sale_id,method_code,player_id,due_date,amount_applied_cents,amount_received_cents,change_cents) VALUES ($1,$2,$3,$4,$5,$6,$7)", [sale.id, payment.methodCode, payment.playerId ?? null, payment.dueDate ?? null, payment.amountAppliedCents, received, change]);
+      if (payment.methodCode === "PLAYER_CREDIT") {
+        await applyPlayerCreditMovement(client, { playerId: payment.playerId!, amountCents: -payment.amountAppliedCents, type: "SALE_CREDIT", userId: operatorId, saleId: sale.id, notes: `Crédito utilizado na venda ${saleNumber(sale.id)}` });
+      }
+      if (payment.methodCode === "FUTURE") {
+        const player = await client.query<{ name: string }>("SELECT name FROM players WHERE id=$1", [payment.playerId]);
+        if (!player.rows[0]) throw new AppError("Jogador não encontrado.", 422, "PLAYER_INVALID");
+        const account = await client.query<{ id: string }>(`INSERT INTO financial_accounts (type,description,counterparty_name,player_id,sale_id,issue_date,total_cents,created_by_id)
+          VALUES ('RECEIVABLE',$1,$2,$3,$4,(now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6) RETURNING id`, [`Pagamento futuro da venda ${saleNumber(sale.id)}`, player.rows[0].name, payment.playerId, sale.id, payment.amountAppliedCents, operatorId]);
+        await client.query("INSERT INTO financial_installments (account_id,installment_number,due_date,amount_cents) VALUES ($1,1,$2,$3)", [account.rows[0].id, payment.dueDate, payment.amountAppliedCents]);
+        await applyPlayerCreditMovement(client, { playerId: payment.playerId!, amountCents: -payment.amountAppliedCents, type: "FUTURE_CHARGE", userId: operatorId, saleId: sale.id, financialAccountId: account.rows[0].id, notes: `Pagamento futuro da venda ${saleNumber(sale.id)}` });
+      }
       paymentSummary.push({ ...payment, changeCents: change });
     }
     await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'SALE_CREATE','sale',$2,$3)", [operatorId, String(sale.id), JSON.stringify({ totalCents })]);
@@ -77,6 +94,19 @@ export async function cancelSale(saleId: number, reason: string, adminId: string
       const next = previous + item.quantity;
       await client.query("UPDATE products SET stock_quantity=$1,updated_at=now() WHERE id=$2", [next, item.product_id]);
       await client.query("INSERT INTO stock_movements (product_id,type,quantity_delta,previous_quantity,new_quantity,sale_id,user_id,notes) VALUES ($1,'SALE_CANCELLATION',$2,$3,$4,$5,$6,$7)", [item.product_id, item.quantity, previous, next, saleId, adminId, reason]);
+    }
+    const specialPayments = await client.query<{ method_code: string; player_id: string; amount_applied_cents: number }>("SELECT method_code,player_id,amount_applied_cents FROM payments WHERE sale_id=$1 AND method_code IN ('PLAYER_CREDIT','FUTURE') ORDER BY method_code", [saleId]);
+    for (const payment of specialPayments.rows) {
+      if (payment.method_code === "FUTURE") {
+        const account = await client.query<{ id: string }>("SELECT id FROM financial_accounts WHERE sale_id=$1 FOR UPDATE", [saleId]);
+        if (account.rows[0]) {
+          const received = await client.query<{ total: number }>(`SELECT COALESCE(sum(fs.amount_cents),0)::int total FROM financial_settlements fs JOIN financial_installments i ON i.id=fs.installment_id WHERE i.account_id=$1`, [account.rows[0].id]);
+          if (received.rows[0].total > 0) throw new AppError("Não é possível cancelar uma venda futura que já possui recebimentos. Estorne a liquidação primeiro.", 409, "FUTURE_ALREADY_SETTLED");
+          await client.query("UPDATE financial_installments SET status='CANCELED',updated_at=now() WHERE account_id=$1", [account.rows[0].id]);
+          await client.query("UPDATE financial_accounts SET status='CANCELED',updated_at=now() WHERE id=$1", [account.rows[0].id]);
+        }
+      }
+      await applyPlayerCreditMovement(client, { playerId: payment.player_id, amountCents: payment.amount_applied_cents, type: "SALE_REVERSAL", userId: adminId, saleId, notes: `Estorno da venda ${saleNumber(saleId)}: ${reason}`, allowInactive: true });
     }
     await client.query("UPDATE sales SET status='CANCELED',canceled_by_id=$1,canceled_at=now(),cancellation_reason=$2 WHERE id=$3", [adminId, reason, saleId]);
     await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'SALE_CANCEL','sale',$2,$3)", [adminId, String(saleId), JSON.stringify({ reason })]);

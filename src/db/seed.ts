@@ -51,7 +51,7 @@ async function main() {
   const adminId = await upsertUser("Administrador", adminEmail, adminPassword, "ADMIN");
   const operatorId = await upsertUser("Operador de Caixa", operatorEmail, operatorPassword, "OPERATOR");
 
-  for (const [code, name, sort] of [["CASH", "Dinheiro", 0], ["PIX", "PIX", 1], ["DEBIT_CARD", "Cartão de débito", 2], ["CREDIT_CARD", "Cartão de crédito", 3]] as const) {
+  for (const [code, name, sort] of [["CASH", "Dinheiro", 0], ["PIX", "PIX", 1], ["DEBIT_CARD", "Cartão de débito", 2], ["CREDIT_CARD", "Cartão de crédito", 3], ["PLAYER_CREDIT", "Crédito do jogador", 4], ["FUTURE", "Pagamento futuro", 5]] as const) {
     await pool.query("INSERT INTO payment_methods (code,name,sort_order) VALUES ($1,$2,$3) ON CONFLICT (code) DO UPDATE SET name=excluded.name,sort_order=excluded.sort_order", [code, name, sort]);
   }
 
