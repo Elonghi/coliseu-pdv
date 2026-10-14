@@ -41,6 +41,14 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.getByRole("heading", { name: "Documentos" })).toBeVisible();
   });
 
+  test("financeiro é somente leitura e alimentado automaticamente", async ({ page }) => {
+    await login(page, adminEmail, seedPassword);
+    await page.goto("/admin/finance");
+    await expect(page.getByRole("heading", { name: "Contas a pagar e receber" })).toBeVisible();
+    await expect(page.getByText("Contas e liquidações geradas automaticamente pelas operações do sistema.")).toBeVisible();
+    await expect(page.locator("main form")).toHaveCount(0);
+  });
+
   test("operador realiza a venda de Coca-Cola com PIX", async ({ page }) => {
     await login(page, operatorEmail, operatorPassword);
     const searchResponse = page.waitForResponse((response) => response.url().includes("/api/pos/products?q="));

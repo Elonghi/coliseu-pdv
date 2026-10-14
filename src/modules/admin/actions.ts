@@ -10,7 +10,6 @@ import { createProduct, updateProduct, type ProductInput } from "@/modules/catal
 import { removeImage, saveProductImage } from "@/modules/catalog/storage";
 import { cancelSale } from "@/modules/sales/service";
 import { adjustStock } from "@/modules/stock/service";
-import { createFinancialAccount, settleFinancialInstallment } from "@/modules/finance/service";
 import { adjustPlayerCredit, createPlayer, updatePlayer } from "@/modules/players/service";
 import { syncSefazDfe } from "@/modules/fiscal/service";
 
@@ -107,31 +106,6 @@ export async function paymentMethodAction(form: FormData) {
   await requireUser("ADMIN");
   await pool.query("UPDATE payment_methods SET active=$1,updated_at=now() WHERE code=$2", [form.get("active") === "on", String(form.get("code"))]);
   revalidatePath("/admin/payment-methods");
-}
-
-export async function financialAccountAction(_: ActionState, form: FormData): Promise<ActionState> {
-  try {
-    const user = await requireUser("ADMIN");
-    await createFinancialAccount({
-      type: String(form.get("type")), description: String(form.get("description") ?? ""), counterpartyName: String(form.get("counterpartyName") ?? ""),
-      playerId: String(form.get("playerId") ?? "") || undefined, issueDate: String(form.get("issueDate") ?? ""), totalCents: parseMoney(String(form.get("total") ?? "0")),
-      terms: String(form.get("terms") ?? "0"), notes: String(form.get("notes") ?? "") || undefined,
-    }, user.id);
-    revalidatePath("/admin/finance"); revalidatePath("/admin");
-    return { ok: "Conta e parcelas registradas." };
-  } catch (error) { return { error: message(error) }; }
-}
-
-export async function financialSettlementAction(_: ActionState, form: FormData): Promise<ActionState> {
-  try {
-    const user = await requireUser("ADMIN");
-    await settleFinancialInstallment({
-      installmentId: String(form.get("installmentId")), amountCents: parseMoney(String(form.get("amount") ?? "0")), methodCode: String(form.get("methodCode")),
-      occurredAt: String(form.get("occurredAt")), personName: String(form.get("personName") ?? "") || undefined, notes: String(form.get("notes") ?? "") || undefined,
-    }, user.id);
-    revalidatePath("/admin/finance"); revalidatePath("/admin/players"); revalidatePath("/admin");
-    return { ok: "Liquidação registrada." };
-  } catch (error) { return { error: message(error) }; }
 }
 
 export async function playerAction(_: ActionState, form: FormData): Promise<ActionState> {
