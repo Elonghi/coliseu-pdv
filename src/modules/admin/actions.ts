@@ -70,11 +70,12 @@ export async function splitProductAction(_: ActionState, form: FormData): Promis
     const result = await splitProductIntoBoosters({
       sourceProductId: String(form.get("sourceProductId") ?? ""),
       outputProductName: String(form.get("outputProductName") ?? ""),
-      outputQuantity: Number(form.get("outputQuantity") ?? 0),
+      sourceQuantity: Number(form.get("sourceQuantity") ?? 0),
+      boostersPerSource: Number(form.get("boostersPerSource") ?? 0),
       outputSalePriceCents: parseMoney(String(form.get("outputSalePrice") ?? "0")),
     }, user.id);
     revalidatePath("/admin/stock"); revalidatePath("/admin/products");
-    return { ok: `Box aberta: ${result.outputQuantity} boosters adicionados ao estoque com custo unitário de ${formatMoney(result.outputUnitCostCents)}.` };
+    return { ok: `${result.sourceQuantity} box(es) aberta(s): ${result.outputQuantity} boosters adicionados ao estoque com custo unitário de ${formatMoney(result.outputUnitCostCents)}.` };
   } catch (error) { return { error: message(error) }; }
 }
 

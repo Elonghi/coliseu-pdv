@@ -58,13 +58,14 @@ test.describe.serial("fluxos essenciais", () => {
   test("administrador encontra somente produtos habilitados para abrir", async ({ page }) => {
     await login(page, adminEmail, seedPassword);
     await page.goto("/admin/stock");
-    await expect(page.getByRole("heading", { name: "Abrir box em boosters" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Abrir produto em boosters" })).toBeVisible();
     const source = page.getByLabel("Produto para abrir");
     await expect(source.locator("option", { hasText: "Magic Foundations — Play Booster Box" })).toHaveCount(1);
     await expect(source.locator("option", { hasText: "Pokémon TCG — Triple Pack Blister" })).toHaveCount(1);
     await expect(source.locator("option", { hasText: "Pokémon Surging Sparks — Elite Trainer Box" })).toHaveCount(1);
     await expect(source.locator("option", { hasText: "Magic Foundations — Play Booster ·" })).toHaveCount(0);
-    await expect(page.getByLabel("Quantidade de boosters")).toBeVisible();
+    await expect(page.getByLabel("Quantidade de boxes/unidades a abrir")).toBeVisible();
+    await expect(page.getByLabel("Boosters por box/unidade")).toBeVisible();
     await expect(page.getByLabel("Venda unitária (R$)")).toBeVisible();
     await expect(page.getByLabel("Nome do booster avulso")).toBeVisible();
   });
