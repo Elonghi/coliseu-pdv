@@ -47,6 +47,14 @@ services:
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${SERVICE_REALBASE64_32_NEXT_SERVER_ACTIONS}
       SERVICE_URL_APP_3000: /
+      SEFAZ_ENABLED: ${SEFAZ_ENABLED:-false}
+      SEFAZ_ENVIRONMENT: ${SEFAZ_ENVIRONMENT:-production}
+      SEFAZ_CNPJ: ${SEFAZ_CNPJ:-}
+      SEFAZ_UF_CODE: ${SEFAZ_UF_CODE:-}
+      SEFAZ_CERTIFICATE_BASE64: ${SEFAZ_CERTIFICATE_BASE64:-}
+      SEFAZ_CERTIFICATE_PASSWORD: ${SEFAZ_CERTIFICATE_PASSWORD:-}
+      SEFAZ_SYNC_INTERVAL_MINUTES: ${SEFAZ_SYNC_INTERVAL_MINUTES:-60}
+      SEFAZ_MAX_BATCHES_PER_SYNC: ${SEFAZ_MAX_BATCHES_PER_SYNC:-20}
     ports:
       - "${APP_PORT:-3000}:3000"
     volumes:
@@ -60,6 +68,27 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    restart: unless-stopped
+
+  sefaz-worker:
+    build:
+      context: .
+      target: worker
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://coliseu:${SERVICE_PASSWORD_64_POSTGRES}@db:5432/coliseu
+      SEFAZ_ENABLED: ${SEFAZ_ENABLED:-false}
+      SEFAZ_ENVIRONMENT: ${SEFAZ_ENVIRONMENT:-production}
+      SEFAZ_CNPJ: ${SEFAZ_CNPJ:-}
+      SEFAZ_UF_CODE: ${SEFAZ_UF_CODE:-}
+      SEFAZ_CERTIFICATE_BASE64: ${SEFAZ_CERTIFICATE_BASE64:-}
+      SEFAZ_CERTIFICATE_PASSWORD: ${SEFAZ_CERTIFICATE_PASSWORD:-}
+      SEFAZ_SYNC_INTERVAL_MINUTES: ${SEFAZ_SYNC_INTERVAL_MINUTES:-60}
+      SEFAZ_MAX_BATCHES_PER_SYNC: ${SEFAZ_MAX_BATCHES_PER_SYNC:-20}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    exclude_from_hc: true
     restart: unless-stopped
 
 volumes:

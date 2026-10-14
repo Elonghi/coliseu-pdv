@@ -10,6 +10,8 @@ Sistema de frente de caixa e gestão para uma loja, com múltiplos operadores, e
 - Crédito do jogador e pagamento futuro no PDV, inclusive combinados com PIX, dinheiro ou cartões.
 - Pagamento futuro gera automaticamente conta a receber e aparece no fluxo financeiro.
 - Dashboard separa faturamento de vendas do fluxo de caixa realizado, evitando dupla contagem.
+- Distribuição automática de NF-e destinadas ao CNPJ por NSU, usando certificado A1 e o Web Service oficial `NFeDistribuicaoDFe`.
+- Armazenamento do XML oficial, normalização de cabeçalho/itens/eventos e consulta no painel administrativo.
 
 ## Desenvolvimento
 
@@ -39,6 +41,20 @@ npm run test:e2e
 ```
 
 Os testes de integração usam `TEST_DATABASE_URL` e exigem um banco vazio próprio. O E2E exige migrations e seed aplicados.
+
+## Integração SEFAZ
+
+A integração consulta a distribuição nacional de DF-e, nunca raspa o portal público. O último NSU e o maior NSU são persistidos em `sefaz_sync_states`; documentos brutos, notas normalizadas, itens e eventos ficam em tabelas fiscais próprias.
+
+Configure as variáveis `SEFAZ_*` descritas em `.env.example`. Para desenvolvimento fora do Docker, prefira `SEFAZ_CERTIFICATE_PATH`. No Coolify, cadastre o PFX em Base64 como variável secreta `SEFAZ_CERTIFICATE_BASE64`. A senha também deve ser secreta e o certificado nunca deve ser versionado.
+
+Teste primeiro com `SEFAZ_ENVIRONMENT=homologation`. Para uma consulta pontual:
+
+```bash
+npm run sefaz:sync
+```
+
+O serviço `sefaz-worker` executa a sincronização automática e respeita o intervalo mínimo de 60 minutos quando não há novos documentos. A tela fica em `/admin/fiscal`.
 
 ## Produção com Docker
 

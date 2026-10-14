@@ -32,6 +32,14 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.getByRole("heading", { name: playerName })).toBeVisible();
   });
 
+  test("administrador acessa o painel de notas fiscais", async ({ page }) => {
+    await login(page, adminEmail, seedPassword);
+    await page.goto("/admin/fiscal");
+    await expect(page.getByRole("heading", { name: "Notas fiscais recebidas" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sincronizar agora" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Documentos" })).toBeVisible();
+  });
+
   test("operador realiza a venda de Coca-Cola com PIX", async ({ page }) => {
     await login(page, operatorEmail, operatorPassword);
     const searchResponse = page.waitForResponse((response) => response.url().includes("/api/pos/products?q="));

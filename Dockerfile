@@ -15,6 +15,11 @@ COPY drizzle ./drizzle
 COPY drizzle.config.ts tsconfig.json ./
 CMD ["npm","run","db:migrate"]
 
+FROM deps AS worker
+COPY src ./src
+COPY tsconfig.json ./
+CMD ["npm","run","sefaz:worker"]
+
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0

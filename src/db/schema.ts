@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, date, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["ADMIN", "OPERATOR"]);
 export const saleStatus = pgEnum("sale_status", ["CONFIRMED", "CANCELED"]);
@@ -7,6 +7,9 @@ export const stockMovementType = pgEnum("stock_movement_type", ["INITIAL", "MANU
 export const financialAccountType = pgEnum("financial_account_type", ["PAYABLE", "RECEIVABLE"]);
 export const financialStatus = pgEnum("financial_status", ["OPEN", "PARTIAL", "SETTLED", "CANCELED"]);
 export const playerCreditMovementType = pgEnum("player_credit_movement_type", ["MANUAL", "SALE_CREDIT", "FUTURE_CHARGE", "FUTURE_PAYMENT", "SALE_REVERSAL"]);
+export const sefazEnvironment = pgEnum("sefaz_environment", ["PRODUCTION", "HOMOLOGATION"]);
+export const fiscalDocumentKind = pgEnum("fiscal_document_kind", ["SUMMARY", "NFE", "EVENT", "UNKNOWN"]);
+export const fiscalInvoiceStatus = pgEnum("fiscal_invoice_status", ["AUTHORIZED", "CANCELED", "DENIED", "UNKNOWN"]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -163,3 +166,111 @@ export const auditLogs = pgTable("audit_logs", {
   action: varchar("action", { length: 80 }).notNull(), entityType: varchar("entity_type", { length: 80 }).notNull(), entityId: varchar("entity_id", { length: 80 }).notNull(),
   before: jsonb("before"), after: jsonb("after"), createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [index("audit_entity_idx").on(t.entityType, t.entityId), index("audit_created_idx").on(t.createdAt)]);
+
+export const sefazSyncStates = pgTable("sefaz_sync_states", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  companyCnpj: varchar("company_cnpj", { length: 14 }).notNull(),
+  environment: sefazEnvironment("environment").notNull(),
+  ufCode: integer("uf_code").notNull(),
+  lastNsu: varchar("last_nsu", { length: 15 }).default("000000000000000").notNull(),
+  maxNsu: varchar("max_nsu", { length: 15 }).default("000000000000000").notNull(),
+  lastStatusCode: varchar("last_status_code", { length: 4 }),
+  lastStatusMessage: text("last_status_message"),
+  lastError: text("last_error"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  nextSyncAt: timestamp("next_sync_at", { withTimezone: true }).defaultNow().notNull(),
+  ...timestamps,
+}, (t) => [
+  uniqueIndex("sefaz_sync_states_company_environment_uidx").on(t.companyCnpj, t.environment),
+  index("sefaz_sync_states_next_sync_idx").on(t.nextSyncAt),
+  check("sefaz_sync_states_nsu_format", sql`${t.lastNsu} ~ '^[0-9]{15}$' AND ${t.maxNsu} ~ '^[0-9]{15}$'`),
+]);
+
+export const fiscalDfeDocuments = pgTable("fiscal_dfe_documents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  syncStateId: uuid("sync_state_id").notNull().references(() => sefazSyncStates.id, { onDelete: "restrict" }),
+  nsu: varchar("nsu", { length: 15 }).notNull(),
+  schema: varchar("schema", { length: 120 }).notNull(),
+  kind: fiscalDocumentKind("kind").default("UNKNOWN").notNull(),
+  accessKey: varchar("access_key", { length: 44 }),
+  rawXml: text("raw_xml").notNull(),
+  parsed: jsonb("parsed"),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("fiscal_dfe_documents_state_nsu_uidx").on(t.syncStateId, t.nsu),
+  index("fiscal_dfe_documents_access_key_idx").on(t.accessKey),
+  index("fiscal_dfe_documents_received_idx").on(t.receivedAt),
+  check("fiscal_dfe_documents_nsu_format", sql`${t.nsu} ~ '^[0-9]{15}$'`),
+]);
+
+export const fiscalInvoices = pgTable("fiscal_invoices", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  syncStateId: uuid("sync_state_id").notNull().references(() => sefazSyncStates.id, { onDelete: "restrict" }),
+  sourceDocumentId: uuid("source_document_id").references(() => fiscalDfeDocuments.id, { onDelete: "restrict" }),
+  accessKey: varchar("access_key", { length: 44 }).notNull(),
+  hasFullXml: boolean("has_full_xml").default(false).notNull(),
+  status: fiscalInvoiceStatus("status").default("UNKNOWN").notNull(),
+  issuerCnpjCpf: varchar("issuer_cnpj_cpf", { length: 14 }),
+  issuerName: varchar("issuer_name", { length: 180 }),
+  issuerStateRegistration: varchar("issuer_state_registration", { length: 30 }),
+  recipientCnpjCpf: varchar("recipient_cnpj_cpf", { length: 14 }),
+  recipientName: varchar("recipient_name", { length: 180 }),
+  recipientStateRegistration: varchar("recipient_state_registration", { length: 30 }),
+  issueAt: timestamp("issue_at", { withTimezone: true }),
+  authorizationAt: timestamp("authorization_at", { withTimezone: true }),
+  operationType: integer("operation_type"),
+  model: varchar("model", { length: 3 }),
+  series: varchar("series", { length: 6 }),
+  number: varchar("number", { length: 12 }),
+  operationNature: varchar("operation_nature", { length: 180 }),
+  totalCents: bigint("total_cents", { mode: "number" }),
+  protocol: varchar("protocol", { length: 30 }),
+  manifestationStatus: varchar("manifestation_status", { length: 40 }),
+  xmlVersion: varchar("xml_version", { length: 10 }),
+  ...timestamps,
+}, (t) => [
+  uniqueIndex("fiscal_invoices_state_access_key_uidx").on(t.syncStateId, t.accessKey),
+  index("fiscal_invoices_issue_idx").on(t.issueAt),
+  index("fiscal_invoices_issuer_idx").on(t.issuerCnpjCpf),
+  index("fiscal_invoices_status_idx").on(t.status),
+  index("fiscal_invoices_number_idx").on(t.number),
+]);
+
+export const fiscalInvoiceItems = pgTable("fiscal_invoice_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  invoiceId: uuid("invoice_id").notNull().references(() => fiscalInvoices.id, { onDelete: "cascade" }),
+  itemNumber: integer("item_number").notNull(),
+  productCode: varchar("product_code", { length: 80 }),
+  ean: varchar("ean", { length: 30 }),
+  description: varchar("description", { length: 240 }).notNull(),
+  ncm: varchar("ncm", { length: 12 }),
+  cfop: varchar("cfop", { length: 6 }),
+  unit: varchar("unit", { length: 12 }),
+  quantity: numeric("quantity", { precision: 18, scale: 4 }),
+  unitValueCents: bigint("unit_value_cents", { mode: "number" }),
+  totalCents: bigint("total_cents", { mode: "number" }),
+  taxes: jsonb("taxes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("fiscal_invoice_items_invoice_number_uidx").on(t.invoiceId, t.itemNumber),
+  index("fiscal_invoice_items_invoice_idx").on(t.invoiceId),
+]);
+
+export const fiscalInvoiceEvents = pgTable("fiscal_invoice_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sourceDocumentId: uuid("source_document_id").notNull().references(() => fiscalDfeDocuments.id, { onDelete: "restrict" }),
+  invoiceId: uuid("invoice_id").references(() => fiscalInvoices.id, { onDelete: "restrict" }),
+  accessKey: varchar("access_key", { length: 44 }),
+  eventType: varchar("event_type", { length: 12 }),
+  sequence: integer("sequence"),
+  eventAt: timestamp("event_at", { withTimezone: true }),
+  protocol: varchar("protocol", { length: 30 }),
+  statusCode: varchar("status_code", { length: 4 }),
+  statusMessage: text("status_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("fiscal_invoice_events_source_uidx").on(t.sourceDocumentId),
+  index("fiscal_invoice_events_access_key_idx").on(t.accessKey),
+  index("fiscal_invoice_events_invoice_idx").on(t.invoiceId),
+]);

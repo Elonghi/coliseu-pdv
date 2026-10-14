@@ -6,3 +6,7 @@ coverage
 test-results
 playwright-report
 .git
+*.pfx
+*.p12
+*.pem
+*.key

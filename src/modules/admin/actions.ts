@@ -12,6 +12,7 @@ import { cancelSale } from "@/modules/sales/service";
 import { adjustStock } from "@/modules/stock/service";
 import { createFinancialAccount, settleFinancialInstallment } from "@/modules/finance/service";
 import { adjustPlayerCredit, createPlayer, updatePlayer } from "@/modules/players/service";
+import { syncSefazDfe } from "@/modules/fiscal/service";
 
 export type ActionState = { ok?: string; error?: string };
 const message = (error: unknown) => error instanceof Error ? error.message : "Não foi possível concluir a operação.";
@@ -153,5 +154,14 @@ export async function playerCreditAction(_: ActionState, form: FormData): Promis
     await adjustPlayerCredit(String(form.get("playerId")), amount, String(form.get("reason") ?? ""), user.id);
     revalidatePath("/admin/players"); revalidatePath("/admin");
     return { ok: "Saldo do jogador atualizado." };
+  } catch (error) { return { error: message(error) }; }
+}
+
+export async function sefazSyncAction(): Promise<ActionState> {
+  try {
+    const user = await requireUser("ADMIN");
+    const result = await syncSefazDfe(user.id);
+    revalidatePath("/admin/fiscal");
+    return { ok: result.status === "completed" ? `${result.documents} documento(s) recebido(s) em ${result.batches} lote(s).` : result.message };
   } catch (error) { return { error: message(error) }; }
 }

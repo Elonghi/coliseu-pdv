@@ -24,8 +24,31 @@ services:
       DATABASE_URL: postgresql://coliseu:${POSTGRES_PASSWORD:-coliseu}@db:5432/coliseu
       STORAGE_PATH: /app/storage
       SESSION_TTL_HOURS: 12
+      SEFAZ_ENABLED: ${SEFAZ_ENABLED:-false}
+      SEFAZ_ENVIRONMENT: ${SEFAZ_ENVIRONMENT:-homologation}
+      SEFAZ_CNPJ: ${SEFAZ_CNPJ:-}
+      SEFAZ_UF_CODE: ${SEFAZ_UF_CODE:-}
+      SEFAZ_CERTIFICATE_BASE64: ${SEFAZ_CERTIFICATE_BASE64:-}
+      SEFAZ_CERTIFICATE_PASSWORD: ${SEFAZ_CERTIFICATE_PASSWORD:-}
+      SEFAZ_SYNC_INTERVAL_MINUTES: ${SEFAZ_SYNC_INTERVAL_MINUTES:-60}
+      SEFAZ_MAX_BATCHES_PER_SYNC: ${SEFAZ_MAX_BATCHES_PER_SYNC:-20}
     ports: ["3000:3000"]
     volumes: ["product_storage:/app/storage"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+  sefaz-worker:
+    build: { context: ., target: worker }
+    environment:
+      DATABASE_URL: postgresql://coliseu:${POSTGRES_PASSWORD:-coliseu}@db:5432/coliseu
+      SEFAZ_ENABLED: ${SEFAZ_ENABLED:-false}
+      SEFAZ_ENVIRONMENT: ${SEFAZ_ENVIRONMENT:-homologation}
+      SEFAZ_CNPJ: ${SEFAZ_CNPJ:-}
+      SEFAZ_UF_CODE: ${SEFAZ_UF_CODE:-}
+      SEFAZ_CERTIFICATE_BASE64: ${SEFAZ_CERTIFICATE_BASE64:-}
+      SEFAZ_CERTIFICATE_PASSWORD: ${SEFAZ_CERTIFICATE_PASSWORD:-}
+      SEFAZ_SYNC_INTERVAL_MINUTES: ${SEFAZ_SYNC_INTERVAL_MINUTES:-60}
+      SEFAZ_MAX_BATCHES_PER_SYNC: ${SEFAZ_MAX_BATCHES_PER_SYNC:-20}
     depends_on:
       migrate: { condition: service_completed_successfully }
     restart: unless-stopped

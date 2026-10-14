@@ -1,0 +1,133 @@
+import type { PoolClient } from "pg";
+import { pool } from "@/db";
+import { AppError } from "@/lib/errors";
+import { distributeDfe } from "./client";
+import { getSefazConfig, type SefazConfig } from "./config";
+import { manifestationLabel, normalizeDfeXml, type NormalizedDfe } from "./xml";
+
+type SyncState = { id: string; last_nsu: string; max_nsu: string; next_sync_at: Date };
+export type SefazSyncResult = { status: "completed" | "deferred" | "running"; documents: number; batches: number; lastNsu?: string; maxNsu?: string; message: string };
+type SyncOptions = { config?: SefazConfig; distribute?: typeof distributeDfe };
+
+async function ensureSyncState(client: PoolClient, config: SefazConfig) {
+  return (await client.query<SyncState>(`INSERT INTO sefaz_sync_states (company_cnpj,environment,uf_code)
+    VALUES ($1,$2,$3) ON CONFLICT (company_cnpj,environment) DO UPDATE SET uf_code=excluded.uf_code,updated_at=now()
+    RETURNING id,last_nsu,max_nsu,next_sync_at`, [config.cnpj, config.environment, config.ufCode])).rows[0];
+}
+
+async function persistInvoice(client: PoolClient, stateId: string, sourceDocumentId: string, normalized: NormalizedDfe) {
+  const invoice = normalized.invoice;
+  if (!invoice) return null;
+  const result = await client.query<{ id: string }>(`INSERT INTO fiscal_invoices
+    (sync_state_id,source_document_id,access_key,has_full_xml,status,issuer_cnpj_cpf,issuer_name,issuer_state_registration,recipient_cnpj_cpf,recipient_name,recipient_state_registration,issue_at,authorization_at,operation_type,model,series,number,operation_nature,total_cents,protocol,xml_version)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+    ON CONFLICT (sync_state_id,access_key) DO UPDATE SET
+      source_document_id=CASE WHEN excluded.has_full_xml OR NOT fiscal_invoices.has_full_xml THEN excluded.source_document_id ELSE fiscal_invoices.source_document_id END,
+      has_full_xml=fiscal_invoices.has_full_xml OR excluded.has_full_xml,
+      status=CASE WHEN excluded.status='UNKNOWN' THEN fiscal_invoices.status ELSE excluded.status END,
+      issuer_cnpj_cpf=COALESCE(excluded.issuer_cnpj_cpf,fiscal_invoices.issuer_cnpj_cpf),issuer_name=COALESCE(excluded.issuer_name,fiscal_invoices.issuer_name),issuer_state_registration=COALESCE(excluded.issuer_state_registration,fiscal_invoices.issuer_state_registration),
+      recipient_cnpj_cpf=COALESCE(excluded.recipient_cnpj_cpf,fiscal_invoices.recipient_cnpj_cpf),recipient_name=COALESCE(excluded.recipient_name,fiscal_invoices.recipient_name),recipient_state_registration=COALESCE(excluded.recipient_state_registration,fiscal_invoices.recipient_state_registration),
+      issue_at=COALESCE(excluded.issue_at,fiscal_invoices.issue_at),authorization_at=COALESCE(excluded.authorization_at,fiscal_invoices.authorization_at),operation_type=COALESCE(excluded.operation_type,fiscal_invoices.operation_type),
+      model=COALESCE(excluded.model,fiscal_invoices.model),series=COALESCE(excluded.series,fiscal_invoices.series),number=COALESCE(excluded.number,fiscal_invoices.number),operation_nature=COALESCE(excluded.operation_nature,fiscal_invoices.operation_nature),
+      total_cents=COALESCE(excluded.total_cents,fiscal_invoices.total_cents),protocol=COALESCE(excluded.protocol,fiscal_invoices.protocol),xml_version=COALESCE(excluded.xml_version,fiscal_invoices.xml_version),updated_at=now()
+    RETURNING id`, [stateId, sourceDocumentId, invoice.accessKey, invoice.hasFullXml, invoice.status, invoice.issuerCnpjCpf ?? null, invoice.issuerName ?? null, invoice.issuerStateRegistration ?? null, invoice.recipientCnpjCpf ?? null, invoice.recipientName ?? null, invoice.recipientStateRegistration ?? null, invoice.issueAt ?? null, invoice.authorizationAt ?? null, invoice.operationType ?? null, invoice.model ?? null, invoice.series ?? null, invoice.number ?? null, invoice.operationNature ?? null, invoice.totalCents ?? null, invoice.protocol ?? null, invoice.xmlVersion ?? null]);
+  const invoiceId = result.rows[0].id;
+  if (invoice.hasFullXml) {
+    await client.query("DELETE FROM fiscal_invoice_items WHERE invoice_id=$1", [invoiceId]);
+    for (const item of normalized.items) {
+      await client.query(`INSERT INTO fiscal_invoice_items (invoice_id,item_number,product_code,ean,description,ncm,cfop,unit,quantity,unit_value_cents,total_cents,taxes)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [invoiceId, item.itemNumber, item.productCode ?? null, item.ean ?? null, item.description, item.ncm ?? null, item.cfop ?? null, item.unit ?? null, item.quantity ?? null, item.unitValueCents ?? null, item.totalCents ?? null, item.taxes ? JSON.stringify(item.taxes) : null]);
+    }
+  }
+  await client.query("UPDATE fiscal_invoice_events SET invoice_id=$1 WHERE access_key=$2 AND invoice_id IS NULL", [invoiceId, invoice.accessKey]);
+  await client.query(`UPDATE fiscal_invoices SET status='CANCELED',updated_at=now() WHERE id=$1 AND EXISTS (
+    SELECT 1 FROM fiscal_invoice_events e WHERE e.invoice_id=$1 AND e.event_type='110111' AND e.protocol IS NOT NULL AND (e.status_code IS NULL OR e.status_code IN ('135','136','155'))
+  )`, [invoiceId]);
+  const manifestation = await client.query<{ event_type: string }>(`SELECT event_type FROM fiscal_invoice_events
+    WHERE invoice_id=$1 AND event_type IN ('210200','210210','210220','210240') AND protocol IS NOT NULL AND (status_code IS NULL OR status_code IN ('135','136','155'))
+    ORDER BY event_at DESC NULLS LAST,created_at DESC LIMIT 1`, [invoiceId]);
+  const manifestationStatus = manifestationLabel(manifestation.rows[0]?.event_type);
+  if (manifestationStatus) await client.query("UPDATE fiscal_invoices SET manifestation_status=$1,updated_at=now() WHERE id=$2", [manifestationStatus, invoiceId]);
+  return invoiceId;
+}
+
+async function persistEvent(client: PoolClient, stateId: string, sourceDocumentId: string, normalized: NormalizedDfe) {
+  const event = normalized.event;
+  if (!event) return;
+  const invoice = event.accessKey ? await client.query<{ id: string }>("SELECT id FROM fiscal_invoices WHERE sync_state_id=$1 AND access_key=$2 LIMIT 1", [stateId, event.accessKey]) : null;
+  const invoiceId = invoice?.rows[0]?.id ?? null;
+  await client.query(`INSERT INTO fiscal_invoice_events (source_document_id,invoice_id,access_key,event_type,sequence,event_at,protocol,status_code,status_message)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (source_document_id) DO UPDATE SET invoice_id=COALESCE(excluded.invoice_id,fiscal_invoice_events.invoice_id),status_code=excluded.status_code,status_message=excluded.status_message`, [sourceDocumentId, invoiceId, event.accessKey ?? null, event.eventType ?? null, event.sequence ?? null, event.eventAt ?? null, event.protocol ?? null, event.statusCode ?? null, event.statusMessage ?? null]);
+  const accepted = Boolean(event.protocol) && (!event.statusCode || ["135", "136", "155"].includes(event.statusCode));
+  if (!invoiceId || !accepted) return;
+  if (event.eventType === "110111") await client.query("UPDATE fiscal_invoices SET status='CANCELED',updated_at=now() WHERE id=$1", [invoiceId]);
+  const manifestation = manifestationLabel(event.eventType);
+  if (manifestation) await client.query("UPDATE fiscal_invoices SET manifestation_status=$1,updated_at=now() WHERE id=$2", [manifestation, invoiceId]);
+}
+
+async function persistDocument(client: PoolClient, stateId: string, document: { nsu: string; schema: string; xml: string }) {
+  const normalized = normalizeDfeXml(document.xml);
+  const source = await client.query<{ id: string }>(`INSERT INTO fiscal_dfe_documents (sync_state_id,nsu,schema,kind,access_key,raw_xml,parsed)
+    VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (sync_state_id,nsu) DO UPDATE SET schema=excluded.schema,kind=excluded.kind,access_key=excluded.access_key,raw_xml=excluded.raw_xml,parsed=excluded.parsed,received_at=now()
+    RETURNING id`, [stateId, document.nsu, document.schema, normalized.kind, normalized.accessKey ?? null, document.xml, JSON.stringify(normalized.parsed)]);
+  await persistInvoice(client, stateId, source.rows[0].id, normalized);
+  await persistEvent(client, stateId, source.rows[0].id, normalized);
+}
+
+async function saveFailure(client: PoolClient, stateId: string | undefined, error: unknown) {
+  if (!stateId) return;
+  const message = error instanceof Error ? error.message : "Erro desconhecido durante sincronização.";
+  const delay = error instanceof AppError && error.code === "SEFAZ_656" ? "65 minutes" : "15 minutes";
+  await client.query("UPDATE sefaz_sync_states SET last_error=$1,last_synced_at=now(),next_sync_at=now()+$2::interval,updated_at=now() WHERE id=$3", [message.slice(0, 4000), delay, stateId]);
+}
+
+export async function syncSefazDfe(actorId?: string, options: SyncOptions = {}): Promise<SefazSyncResult> {
+  const config = options.config ?? getSefazConfig();
+  const distribution = options.distribute ?? distributeDfe;
+  if (!config.enabled) throw new AppError("A integração SEFAZ está desativada.", 503, "SEFAZ_DISABLED");
+  const client = await pool.connect();
+  let locked = false;
+  let state: SyncState | undefined;
+  const lockKey = `sefaz-dfe:${config.environment}:${config.cnpj}`;
+  try {
+    locked = (await client.query<{ acquired: boolean }>("SELECT pg_try_advisory_lock(hashtextextended($1,0)) acquired", [lockKey])).rows[0].acquired;
+    if (!locked) return { status: "running", documents: 0, batches: 0, message: "Já existe uma sincronização em andamento." };
+    state = await ensureSyncState(client, config);
+    if (state.next_sync_at > new Date()) return { status: "deferred", documents: 0, batches: 0, lastNsu: state.last_nsu, maxNsu: state.max_nsu, message: `Próxima consulta permitida após ${state.next_sync_at.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.` };
+    let lastNsu = state.last_nsu;
+    let maxNsu = state.max_nsu;
+    let documents = 0;
+    let batches = 0;
+    let lastMessage = "";
+    while (batches < config.maxBatches) {
+      const response = await distribution(config, lastNsu);
+      batches++;
+      lastMessage = response.statusMessage;
+      if (!["137", "138"].includes(response.statusCode)) {
+        const delay = response.statusCode === "656" ? "65 minutes" : "15 minutes";
+        await client.query("UPDATE sefaz_sync_states SET last_status_code=$1,last_status_message=$2,last_error=$2,last_synced_at=now(),next_sync_at=now()+$3::interval,updated_at=now() WHERE id=$4", [response.statusCode, response.statusMessage, delay, state.id]);
+        throw new AppError(`SEFAZ ${response.statusCode}: ${response.statusMessage}`, 502, `SEFAZ_${response.statusCode}`);
+      }
+      await client.query("BEGIN");
+      try {
+        for (const document of response.documents) await persistDocument(client, state.id, document);
+        lastNsu = response.lastNsu;
+        maxNsu = response.maxNsu;
+        documents += response.documents.length;
+        const completed = BigInt(lastNsu) >= BigInt(maxNsu) || response.statusCode === "137";
+        await client.query(`UPDATE sefaz_sync_states SET last_nsu=$1,max_nsu=$2,last_status_code=$3,last_status_message=$4,last_error=NULL,last_synced_at=now(),
+          next_sync_at=CASE WHEN $5 THEN now()+GREATEST($6,60)::int*interval '1 minute' ELSE now() END,updated_at=now() WHERE id=$7`, [lastNsu, maxNsu, response.statusCode, response.statusMessage, completed, config.intervalMinutes, state.id]);
+        await client.query("COMMIT");
+        if (completed) break;
+      } catch (error) { await client.query("ROLLBACK"); throw error; }
+    }
+    if (actorId) await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'SEFAZ_SYNC','sefaz_sync_state',$2,$3)", [actorId, state.id, JSON.stringify({ documents, batches, lastNsu, maxNsu })]);
+    return { status: "completed", documents, batches, lastNsu, maxNsu, message: lastMessage || "Sincronização concluída." };
+  } catch (error) {
+    await saveFailure(client, state?.id, error);
+    throw error;
+  } finally {
+    if (locked) await client.query("SELECT pg_advisory_unlock(hashtextextended($1,0))", [lockKey]).catch(() => undefined);
+    client.release();
+  }
+}

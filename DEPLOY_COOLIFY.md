@@ -20,6 +20,18 @@ Cadastre antes do primeiro deploy:
 - `SEED_ADMIN_PASSWORD` e `SEED_OPERATOR_PASSWORD`, ambas com pelo menos 12 caracteres.
 - `SESSION_TTL_HOURS=12`, ou o tempo de sessão desejado.
 
+Para habilitar a distribuição de notas fiscais, cadastre como segredos:
+
+- `SEFAZ_ENABLED=true`
+- `SEFAZ_ENVIRONMENT=production` — use `homologation` nos testes iniciais.
+- `SEFAZ_CNPJ` com os 14 caracteres do estabelecimento consultado.
+- `SEFAZ_UF_CODE` com o código IBGE da UF, por exemplo `35` para São Paulo.
+- `SEFAZ_CERTIFICATE_BASE64` com o conteúdo integral do arquivo A1 `.pfx/.p12` convertido para Base64 em uma única linha.
+- `SEFAZ_CERTIFICATE_PASSWORD` com a senha do A1.
+- `SEFAZ_SYNC_INTERVAL_MINUTES=60` e `SEFAZ_MAX_BATCHES_PER_SYNC=20`.
+
+Não coloque o PFX ou sua senha no Git. O serviço `sefaz-worker` não publica portas e compartilha somente o banco com a aplicação. O controle por NSU evita consultas concorrentes e bloqueios por consumo indevido.
+
 Após o primeiro deploy bem-sucedido, altere `SEED_ON_DEPLOY` para `false` e faça novo deploy. Assim, migrations continuam automáticas sem redefinir senhas ou dados demonstrativos.
 
 ## 3. Acesso direto pelo IP
@@ -48,11 +60,12 @@ Configure um backup PostgreSQL diário, com retenção e cópia S3 externa. Conf
 
 ## 6. Verificação pós-deploy
 
-1. Confirme que `db` e `app` estão saudáveis e `migrate` terminou com código zero.
+1. Confirme que `db`, `app` e `sefaz-worker` estão saudáveis e `migrate` terminou com código zero.
 2. Acesse `/api/health`; deve retornar `status: ok` e `database: ok`.
 3. Entre com o administrador configurado no seed.
 4. Faça uma venda de teste, confirme a baixa de estoque e o dashboard.
 5. Troque `SEED_ON_DEPLOY` para `false` imediatamente após o bootstrap.
+6. Em **Notas fiscais**, confirme ambiente, CNPJ, último NSU e a resposta da primeira sincronização.
 
 ## Rollback e operação
 
