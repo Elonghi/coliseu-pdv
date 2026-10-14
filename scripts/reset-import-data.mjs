@@ -21,7 +21,8 @@ try {
   await client.query("BEGIN");
   await client.query("SET LOCAL lock_timeout = '30s'");
   await client.query(`LOCK TABLE players,products,product_splits,supplier_product_mappings,sales,sale_items,payments,
-    player_credit_movements,stock_movements,financial_settlements,financial_installments,financial_accounts,
+    cash_movements,cash_sessions,inventory_count_items,inventory_counts,purchase_order_items,purchase_orders,
+    player_credit_movements,stock_movements,bank_transactions,bank_imports,financial_settlements,financial_installments,financial_accounts,
     fiscal_invoice_events,fiscal_invoice_items,fiscal_invoices,fiscal_dfe_documents,fiscal_import_batches
     IN ACCESS EXCLUSIVE MODE`);
 
@@ -38,6 +39,8 @@ try {
   productImageKeys = (await client.query("SELECT image_key FROM products WHERE image_key IS NOT NULL"))
     .rows.map((row) => row.image_key);
 
+  await client.query("DELETE FROM bank_transactions");
+  await client.query("DELETE FROM bank_imports");
   await client.query("DELETE FROM financial_settlements");
   await client.query("DELETE FROM player_credit_movements");
   await client.query("DELETE FROM financial_installments");
@@ -49,6 +52,12 @@ try {
   await client.query("DELETE FROM sale_items");
   await client.query("DELETE FROM sales");
   await client.query("ALTER TABLE sales ALTER COLUMN id RESTART WITH 1");
+  await client.query("DELETE FROM cash_movements");
+  await client.query("DELETE FROM cash_sessions");
+  await client.query("DELETE FROM inventory_count_items");
+  await client.query("DELETE FROM inventory_counts");
+  await client.query("DELETE FROM purchase_order_items");
+  await client.query("DELETE FROM purchase_orders");
   await client.query("DELETE FROM fiscal_invoice_events");
   await client.query("DELETE FROM fiscal_invoice_items");
   await client.query("DELETE FROM fiscal_invoices");
@@ -76,7 +85,7 @@ try {
   console.log("Limpeza concluída com sucesso.");
   console.table(before);
   console.log(`${removedImages} foto(s) de produto removida(s) do storage.`);
-  console.log("Usuários, configurações, categorias, unidades, formas de pagamento, jogadores, auditoria e último NSU foram preservados.");
+  console.log("Usuários, configurações, categorias, unidades, formas de pagamento, jogadores, fornecedores, caixas, auditoria e último NSU foram preservados.");
 } catch (error) {
   await client.query("ROLLBACK").catch(() => undefined);
   console.error("A limpeza falhou e nenhuma alteração foi confirmada.", error);

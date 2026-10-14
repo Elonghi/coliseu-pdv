@@ -1,6 +1,7 @@
 import { AppError, errorResponse } from "@/lib/errors";
 import { requireSameOrigin } from "@/lib/security";
-import { requireApiUser } from "@/modules/auth/session";
+import { requireApiPermission } from "@/modules/auth/session";
+import { permissions } from "@/modules/auth/permissions";
 import { importFiscalXmlBatch } from "@/modules/fiscal/service";
 
 export const runtime = "nodejs";
@@ -12,7 +13,7 @@ const MAX_REQUEST_BYTES = 50 * 1024 * 1024;
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
-    const user = await requireApiUser("ADMIN");
+    const user = await requireApiPermission(permissions.FISCAL_MANAGE);
     const contentLength = Number(request.headers.get("content-length") ?? 0);
     if (contentLength > MAX_REQUEST_BYTES) throw new AppError("O lote excede o limite de 50 MB.", 413, "FISCAL_IMPORT_TOO_LARGE");
     const form = await request.formData();

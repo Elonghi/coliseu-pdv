@@ -6,6 +6,7 @@ export function LoginForm() {
   return <form action={action} className="grid gap-4">
     <label className="label">E-mail<input className="field" name="email" type="email" autoComplete="username" required autoFocus /></label>
     <label className="label">Senha<input className="field" name="password" type="password" autoComplete="current-password" required /></label>
+    <label className="label">Código 2FA (se ativado)<input className="field" name="otp" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" /></label>
     {state.error && <p className="notice-error">{state.error}</p>}
     <button className="btn btn-primary" disabled={pending}>{pending ? "Entrando..." : "Entrar"}</button>
   </form>;

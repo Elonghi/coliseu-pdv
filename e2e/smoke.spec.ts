@@ -22,6 +22,21 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.getByText("Fluxo financeiro realizado — últimos 14 dias")).toBeVisible();
   });
 
+  test("administrador acessa as novas áreas operacionais", async ({ page }) => {
+    await login(page, adminEmail, seedPassword);
+    for (const [path, heading] of [
+      ["/admin/cash", "Caixas"],
+      ["/admin/inventory", "Inventários"],
+      ["/admin/purchases", "Pedidos de compra"],
+      ["/admin/labels", "Etiquetas"],
+      ["/admin/audit", "Auditoria"],
+      ["/security", "Autenticação em duas etapas"],
+    ] as const) {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    }
+  });
+
   test("administrador cadastra jogador para uso de crédito", async ({ page }) => {
     await login(page, adminEmail, seedPassword);
     await page.goto("/admin/players");

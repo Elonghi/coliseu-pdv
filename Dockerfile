@@ -21,6 +21,12 @@ COPY src ./src
 COPY tsconfig.json ./
 CMD ["npm","run","sefaz:worker"]
 
+FROM postgres:17-alpine AS backup
+RUN apk add --no-cache tar
+COPY scripts/backup.sh /usr/local/bin/coliseu-backup
+RUN chmod +x /usr/local/bin/coliseu-backup
+ENTRYPOINT ["/usr/local/bin/coliseu-backup"]
+
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0

@@ -3,13 +3,17 @@ import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, p
 
 export const userRole = pgEnum("user_role", ["ADMIN", "OPERATOR"]);
 export const saleStatus = pgEnum("sale_status", ["CONFIRMED", "CANCELED"]);
-export const stockMovementType = pgEnum("stock_movement_type", ["INITIAL", "MANUAL_IN", "MANUAL_ADJUSTMENT", "SALE", "SALE_CANCELLATION", "RETURN", "FISCAL_ENTRY", "FISCAL_CANCELLATION", "BOX_SPLIT_OUT", "BOOSTER_SPLIT_IN"]);
+export const stockMovementType = pgEnum("stock_movement_type", ["INITIAL", "MANUAL_IN", "MANUAL_ADJUSTMENT", "SALE", "SALE_CANCELLATION", "RETURN", "FISCAL_ENTRY", "FISCAL_CANCELLATION", "BOX_SPLIT_OUT", "BOOSTER_SPLIT_IN", "INVENTORY_COUNT", "PURCHASE_RECEIPT"]);
 export const financialAccountType = pgEnum("financial_account_type", ["PAYABLE", "RECEIVABLE"]);
 export const financialStatus = pgEnum("financial_status", ["OPEN", "PARTIAL", "SETTLED", "CANCELED"]);
 export const playerCreditMovementType = pgEnum("player_credit_movement_type", ["MANUAL", "SALE_CREDIT", "FUTURE_CHARGE", "FUTURE_PAYMENT", "SALE_REVERSAL"]);
 export const sefazEnvironment = pgEnum("sefaz_environment", ["PRODUCTION", "HOMOLOGATION"]);
 export const fiscalDocumentKind = pgEnum("fiscal_document_kind", ["SUMMARY", "NFE", "EVENT", "UNKNOWN"]);
 export const fiscalInvoiceStatus = pgEnum("fiscal_invoice_status", ["AUTHORIZED", "CANCELED", "DENIED", "UNKNOWN"]);
+export const cashSessionStatus = pgEnum("cash_session_status", ["OPEN", "CLOSED"]);
+export const cashMovementType = pgEnum("cash_movement_type", ["SUPPLY", "WITHDRAWAL"]);
+export const inventoryCountStatus = pgEnum("inventory_count_status", ["OPEN", "FINALIZED", "CANCELED"]);
+export const purchaseOrderStatus = pgEnum("purchase_order_status", ["DRAFT", "SENT", "PARTIAL", "RECEIVED", "CANCELED"]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -23,6 +27,8 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: userRole("role").notNull(),
   active: boolean("active").default(true).notNull(),
+  totpSecretEncrypted: text("totp_secret_encrypted"),
+  totpEnabled: boolean("totp_enabled").default(false).notNull(),
   ...timestamps,
 }, (t) => [uniqueIndex("users_email_lower_uidx").on(sql`lower(${t.email})`), index("users_role_active_idx").on(t.role, t.active)]);
 
@@ -42,6 +48,12 @@ export const units = pgTable("units", {
   id: uuid("id").defaultRandom().primaryKey(), code: varchar("code", { length: 12 }).notNull().unique(), name: varchar("name", { length: 50 }).notNull(), active: boolean("active").default(true).notNull(), ...timestamps,
 });
 
+export const userPermissions = pgTable("user_permissions", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  permission: varchar("permission", { length: 60 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [uniqueIndex("user_permissions_user_permission_uidx").on(t.userId, t.permission), index("user_permissions_user_idx").on(t.userId)]);
+
 export const products = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
   sku: varchar("sku", { length: 60 }).notNull().unique(),
@@ -55,6 +67,12 @@ export const products = pgTable("products", {
   stockQuantity: integer("stock_quantity").default(0).notNull(), minimumStock: integer("minimum_stock").default(0).notNull(),
   canSplitIntoBoosters: boolean("can_split_into_boosters").default(false).notNull(),
   isLooseBooster: boolean("is_loose_booster").default(false).notNull(),
+  tcgGame: varchar("tcg_game", { length: 80 }),
+  tcgSetName: varchar("tcg_set_name", { length: 120 }),
+  tcgCollectorNumber: varchar("tcg_collector_number", { length: 40 }),
+  tcgLanguage: varchar("tcg_language", { length: 40 }),
+  tcgRarity: varchar("tcg_rarity", { length: 80 }),
+  tcgCondition: varchar("tcg_condition", { length: 40 }),
   active: boolean("active").default(true).notNull(), ...timestamps,
 }, (t) => [
   check("products_money_nonnegative", sql`${t.costCents} >= 0 AND ${t.salePriceCents} >= 0`),
@@ -102,15 +120,49 @@ export const productSplits = pgTable("product_splits", {
   index("product_splits_output_date_idx").on(t.outputProductId, t.createdAt),
 ]);
 
+export const cashRegisters = pgTable("cash_registers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 80 }).notNull(),
+  active: boolean("active").default(true).notNull(),
+  ...timestamps,
+}, (t) => [uniqueIndex("cash_registers_name_lower_uidx").on(sql`lower(${t.name})`), index("cash_registers_active_idx").on(t.active)]);
+
+export const cashSessions = pgTable("cash_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  registerId: uuid("register_id").notNull().references(() => cashRegisters.id, { onDelete: "restrict" }),
+  operatorId: uuid("operator_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  status: cashSessionStatus("status").default("OPEN").notNull(),
+  openingAmountCents: integer("opening_amount_cents").default(0).notNull(),
+  closingCountedCents: integer("closing_counted_cents"),
+  expectedAmountCents: integer("expected_amount_cents"),
+  differenceCents: integer("difference_cents"),
+  openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  closedById: uuid("closed_by_id").references(() => users.id, { onDelete: "restrict" }),
+  notes: text("notes"),
+  ...timestamps,
+}, (t) => [check("cash_sessions_amounts_valid", sql`${t.openingAmountCents} >= 0 AND (${t.closingCountedCents} IS NULL OR ${t.closingCountedCents} >= 0)`), index("cash_sessions_register_status_idx").on(t.registerId, t.status), index("cash_sessions_operator_status_idx").on(t.operatorId, t.status), uniqueIndex("cash_sessions_one_open_register_uidx").on(t.registerId).where(sql`${t.status} = 'OPEN'`), uniqueIndex("cash_sessions_one_open_operator_uidx").on(t.operatorId).where(sql`${t.status} = 'OPEN'`)]);
+
+export const cashMovements = pgTable("cash_movements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id").notNull().references(() => cashSessions.id, { onDelete: "restrict" }),
+  type: cashMovementType("type").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  reason: varchar("reason", { length: 300 }).notNull(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [check("cash_movements_amount_positive", sql`${t.amountCents} > 0`), index("cash_movements_session_date_idx").on(t.sessionId, t.createdAt)]);
+
 export const sales = pgTable("sales", {
   id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
   operatorId: uuid("operator_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  cashSessionId: uuid("cash_session_id").references(() => cashSessions.id, { onDelete: "restrict" }),
   status: saleStatus("status").default("CONFIRMED").notNull(),
   subtotalCents: integer("subtotal_cents").notNull(), discountCents: integer("discount_cents").notNull(), totalCents: integer("total_cents").notNull(),
   canceledById: uuid("canceled_by_id").references(() => users.id, { onDelete: "restrict" }),
   canceledAt: timestamp("canceled_at", { withTimezone: true }), cancellationReason: text("cancellation_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [index("sales_created_idx").on(t.createdAt), index("sales_operator_idx").on(t.operatorId), index("sales_status_idx").on(t.status)]);
+}, (t) => [index("sales_created_idx").on(t.createdAt), index("sales_operator_idx").on(t.operatorId), index("sales_cash_session_idx").on(t.cashSessionId), index("sales_status_idx").on(t.status)]);
 
 export const saleItems = pgTable("sale_items", {
   id: uuid("id").defaultRandom().primaryKey(), saleId: integer("sale_id").notNull().references(() => sales.id, { onDelete: "restrict" }),
@@ -170,8 +222,34 @@ export const financialSettlements = pgTable("financial_settlements", {
   personName: varchar("person_name", { length: 180 }),
   notes: text("notes"),
   createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  reversedAt: timestamp("reversed_at", { withTimezone: true }),
+  reversedById: uuid("reversed_by_id").references(() => users.id, { onDelete: "restrict" }),
+  reversalReason: text("reversal_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [check("financial_settlements_amount_positive", sql`${t.amountCents} > 0`), index("financial_settlements_installment_idx").on(t.installmentId), index("financial_settlements_occurred_idx").on(t.occurredAt)]);
+
+export const bankImports = pgTable("bank_imports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  bankId: varchar("bank_id", { length: 40 }),
+  accountId: varchar("account_id", { length: 80 }),
+  importedById: uuid("imported_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  transactionCount: integer("transaction_count").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [index("bank_imports_created_idx").on(t.createdAt)]);
+
+export const bankTransactions = pgTable("bank_transactions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  importId: uuid("import_id").notNull().references(() => bankImports.id, { onDelete: "cascade" }),
+  externalId: varchar("external_id", { length: 180 }).notNull(),
+  occurredOn: date("occurred_on").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  memo: text("memo"),
+  settlementId: uuid("settlement_id").references(() => financialSettlements.id, { onDelete: "restrict" }),
+  reconciledAt: timestamp("reconciled_at", { withTimezone: true }),
+  reconciledById: uuid("reconciled_by_id").references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [check("bank_transactions_amount_nonzero", sql`${t.amountCents} <> 0`), uniqueIndex("bank_transactions_import_external_uidx").on(t.importId, t.externalId), index("bank_transactions_date_amount_idx").on(t.occurredOn, t.amountCents), index("bank_transactions_settlement_idx").on(t.settlementId)]);
 
 export const playerCreditMovements = pgTable("player_credit_movements", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -192,6 +270,62 @@ export const stockMovements = pgTable("stock_movements", {
   saleId: integer("sale_id").references(() => sales.id, { onDelete: "restrict" }), fiscalInvoiceItemId: uuid("fiscal_invoice_item_id").references((): AnyPgColumn => fiscalInvoiceItems.id, { onDelete: "restrict" }), productSplitId: uuid("product_split_id").references(() => productSplits.id, { onDelete: "restrict" }), userId: uuid("user_id").references(() => users.id, { onDelete: "restrict" }), notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [index("stock_movements_product_date_idx").on(t.productId, t.createdAt), index("stock_movements_sale_idx").on(t.saleId), index("stock_movements_fiscal_item_idx").on(t.fiscalInvoiceItemId), index("stock_movements_product_split_idx").on(t.productSplitId), uniqueIndex("stock_movements_fiscal_item_type_uidx").on(t.fiscalInvoiceItemId, t.type)]);
+
+export const inventoryCounts = pgTable("inventory_counts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 160 }).notNull(),
+  status: inventoryCountStatus("status").default("OPEN").notNull(),
+  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  finalizedById: uuid("finalized_by_id").references(() => users.id, { onDelete: "restrict" }),
+  finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+  notes: text("notes"),
+  ...timestamps,
+}, (t) => [index("inventory_counts_status_created_idx").on(t.status, t.createdAt)]);
+
+export const inventoryCountItems = pgTable("inventory_count_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  countId: uuid("count_id").notNull().references(() => inventoryCounts.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
+  expectedQuantity: integer("expected_quantity").notNull(),
+  countedQuantity: integer("counted_quantity"),
+  notes: text("notes"),
+  updatedById: uuid("updated_by_id").references(() => users.id, { onDelete: "restrict" }),
+  ...timestamps,
+}, (t) => [check("inventory_count_items_values_valid", sql`${t.expectedQuantity} >= 0 AND (${t.countedQuantity} IS NULL OR ${t.countedQuantity} >= 0)`), uniqueIndex("inventory_count_items_count_product_uidx").on(t.countId, t.productId), index("inventory_count_items_count_idx").on(t.countId)]);
+
+export const suppliers = pgTable("suppliers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 180 }).notNull(),
+  document: varchar("document", { length: 14 }),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 40 }),
+  active: boolean("active").default(true).notNull(),
+  ...timestamps,
+}, (t) => [uniqueIndex("suppliers_document_uidx").on(t.document), index("suppliers_name_idx").on(t.name)]);
+
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  number: integer("number").generatedAlwaysAsIdentity(),
+  supplierId: uuid("supplier_id").notNull().references(() => suppliers.id, { onDelete: "restrict" }),
+  status: purchaseOrderStatus("status").default("DRAFT").notNull(),
+  expectedAt: date("expected_at"),
+  fiscalInvoiceId: uuid("fiscal_invoice_id").references((): AnyPgColumn => fiscalInvoices.id, { onDelete: "restrict" }),
+  notes: text("notes"),
+  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  receivedById: uuid("received_by_id").references(() => users.id, { onDelete: "restrict" }),
+  receivedAt: timestamp("received_at", { withTimezone: true }),
+  ...timestamps,
+}, (t) => [uniqueIndex("purchase_orders_number_uidx").on(t.number), index("purchase_orders_supplier_status_idx").on(t.supplierId, t.status), index("purchase_orders_expected_idx").on(t.expectedAt)]);
+
+export const purchaseOrderItems = pgTable("purchase_order_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
+  orderedQuantity: integer("ordered_quantity").notNull(),
+  receivedQuantity: integer("received_quantity").default(0).notNull(),
+  unitCostCents: integer("unit_cost_cents").notNull(),
+  ...timestamps,
+}, (t) => [check("purchase_order_items_values_valid", sql`${t.orderedQuantity} > 0 AND ${t.receivedQuantity} >= 0 AND ${t.unitCostCents} >= 0`), uniqueIndex("purchase_order_items_order_product_uidx").on(t.orderId, t.productId), index("purchase_order_items_order_idx").on(t.orderId)]);
 
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(), userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),

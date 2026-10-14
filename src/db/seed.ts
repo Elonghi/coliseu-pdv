@@ -2,6 +2,7 @@ import "dotenv/config";
 import { hash } from "bcryptjs";
 import { pool } from "./index";
 import { createSale } from "@/modules/sales/service";
+import { permissions } from "@/modules/auth/permissions";
 
 const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@coliseu.local").toLowerCase();
 const operatorEmail = (process.env.SEED_OPERATOR_EMAIL ?? "operador@coliseu.local").toLowerCase();
@@ -29,6 +30,10 @@ type SeedProduct = {
   minimumStock: number;
   splittable?: boolean;
   looseBooster?: boolean;
+  tcgGame?: string;
+  tcgSetName?: string;
+  tcgLanguage?: string;
+  tcgCondition?: string;
 };
 
 async function upsertUser(name: string, email: string, password: string, role: Role) {
@@ -52,6 +57,9 @@ async function ensureCategory(name: string) {
 async function main() {
   const adminId = await upsertUser("Administrador", adminEmail, adminPassword, "ADMIN");
   const operatorId = await upsertUser("Operador de Caixa", operatorEmail, operatorPassword, "OPERATOR");
+  for (const permission of [permissions.CASH_MANAGE, permissions.SALES_VIEW]) {
+    await pool.query("INSERT INTO user_permissions(user_id,permission) VALUES ($1,$2) ON CONFLICT DO NOTHING", [operatorId, permission]);
+  }
 
   for (const [code, name, sort] of [["CASH", "Dinheiro", 0], ["PIX", "PIX", 1], ["DEBIT_CARD", "Cartão de débito", 2], ["CREDIT_CARD", "Cartão de crédito", 3], ["PLAYER_CREDIT", "Crédito do jogador", 4], ["FUTURE", "Pagamento futuro", 5]] as const) {
     await pool.query("INSERT INTO payment_methods (code,name,sort_order) VALUES ($1,$2,$3) ON CONFLICT (code) DO UPDATE SET name=excluded.name,sort_order=excluded.sort_order", [code, name, sort]);
@@ -96,16 +104,21 @@ async function main() {
   const productIds = new Map<string, string>();
   let insertedCount = 0;
   for (const product of products) {
+    const tcgGame = product.tcgGame ?? (product.category === "Magic: The Gathering" || product.category === "Pokémon TCG" ? product.category : null);
+    const tcgSetName = product.tcgSetName
+      ?? (product.sku.includes("FDN") ? "Foundations" : product.sku.includes("MTG-FF") ? "FINAL FANTASY" : product.sku.includes("MH3") ? "Modern Horizons 3" : product.sku.includes("SSP") ? "Surging Sparks" : null);
+    const tcgLanguage = product.tcgLanguage ?? null;
+    const tcgCondition = product.tcgCondition ?? (tcgGame ? "SEALED" : null);
     const existing = await pool.query<{ id: string }>("SELECT id FROM products WHERE sku=$1", [product.sku]);
     if (existing.rows[0]) {
       productIds.set(product.sku, existing.rows[0].id);
-      await pool.query("UPDATE products SET can_split_into_boosters=$1,is_loose_booster=$2,updated_at=now() WHERE id=$3", [product.splittable ?? false, product.looseBooster ?? false, existing.rows[0].id]);
+      await pool.query("UPDATE products SET can_split_into_boosters=$1,is_loose_booster=$2,tcg_game=$3,tcg_set_name=$4,tcg_language=$5,tcg_condition=$6,updated_at=now() WHERE id=$7", [product.splittable ?? false, product.looseBooster ?? false, tcgGame, tcgSetName, tcgLanguage, tcgCondition, existing.rows[0].id]);
       continue;
     }
     const inserted = await pool.query<{ id: string }>(`INSERT INTO products
-      (sku,name,description,category_id,unit_id,cost_cents,sale_price_cents,max_discount_bps,stock_quantity,minimum_stock,can_split_into_boosters,is_loose_booster)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-    [product.sku, product.name, product.description, categoryIds.get(product.category), unitIds.get(product.unit), product.costCents, product.priceCents, product.maxDiscountBps, product.stock, product.minimumStock, product.splittable ?? false, product.looseBooster ?? false]);
+      (sku,name,description,category_id,unit_id,cost_cents,sale_price_cents,max_discount_bps,stock_quantity,minimum_stock,can_split_into_boosters,is_loose_booster,tcg_game,tcg_set_name,tcg_language,tcg_condition)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+    [product.sku, product.name, product.description, categoryIds.get(product.category), unitIds.get(product.unit), product.costCents, product.priceCents, product.maxDiscountBps, product.stock, product.minimumStock, product.splittable ?? false, product.looseBooster ?? false, tcgGame, tcgSetName, tcgLanguage, tcgCondition]);
     const id = inserted.rows[0].id;
     productIds.set(product.sku, id);
     insertedCount++;
@@ -128,7 +141,7 @@ async function main() {
         { productId: productIds.get("PKM-TRP-001")!, quantity: 1, discountBasisPoints: 0 },
       ],
       payments: [
-        { methodCode: "CASH", amountAppliedCents: 7000, amountReceivedCents: 10000 },
+        { methodCode: "PIX", amountAppliedCents: 7000 },
         { methodCode: "DEBIT_CARD", amountAppliedCents: 7440 },
       ],
     }, operatorId);

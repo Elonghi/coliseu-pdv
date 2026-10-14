@@ -1,9 +1,12 @@
 import { DashboardCharts } from "@/components/dashboard-charts";
 import { formatMoney } from "@/lib/money";
 import { getDashboard } from "@/modules/dashboard/queries";
+import { permissions } from "@/modules/auth/permissions";
+import { requirePermission } from "@/modules/auth/session";
 
 export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
+  await requirePermission(permissions.DASHBOARD_VIEW);
   const data = await getDashboard(); const k = data.kpis;
   const variation=k.previous_month_cents?`${(((k.month_cents-k.previous_month_cents)/k.previous_month_cents)*100).toFixed(1)}% vs. mês anterior`:"Sem base anterior";
   const cards = [["Hoje",formatMoney(k.today_cents),""],["Semana",formatMoney(k.week_cents),""],["Mês",formatMoney(k.month_cents),variation],["Ticket médio",formatMoney(k.avg_cents),""],["Vendas hoje",String(k.today_count),""],["Vendas no mês",String(k.month_count),""]];

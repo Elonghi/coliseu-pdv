@@ -44,7 +44,9 @@ export async function createSale(input: CheckoutInput, operatorId: string) {
     }
     const specialPlayers = new Set(parsed.payments.filter(p => ["PLAYER_CREDIT", "FUTURE"].includes(p.methodCode)).map(p => p.playerId));
     if (specialPlayers.size > 1) throw new AppError("Use o mesmo jogador nas formas de crédito desta venda.", 422, "PLAYER_MISMATCH");
-    const saleResult = await client.query<{ id: number; created_at: Date }>("INSERT INTO sales (operator_id,subtotal_cents,discount_cents,total_cents) VALUES ($1,$2,$3,$4) RETURNING id,created_at", [operatorId, subtotalCents, discountCents, totalCents]);
+    const cashSession = await client.query<{ id: string }>("SELECT id FROM cash_sessions WHERE operator_id=$1 AND status='OPEN' ORDER BY opened_at DESC LIMIT 1 FOR UPDATE", [operatorId]);
+    if (parsed.payments.some(payment => payment.methodCode === "CASH") && !cashSession.rows[0]) throw new AppError("Abra uma sessão de caixa antes de receber em dinheiro.", 409, "CASH_SESSION_REQUIRED");
+    const saleResult = await client.query<{ id: number; created_at: Date }>("INSERT INTO sales (operator_id,cash_session_id,subtotal_cents,discount_cents,total_cents) VALUES ($1,$2,$3,$4,$5) RETURNING id,created_at", [operatorId, cashSession.rows[0]?.id ?? null, subtotalCents, discountCents, totalCents]);
     const sale = saleResult.rows[0];
     for (const item of calculated) {
       const p = item.product;
@@ -100,7 +102,7 @@ export async function cancelSale(saleId: number, reason: string, adminId: string
       if (payment.method_code === "FUTURE") {
         const account = await client.query<{ id: string }>("SELECT id FROM financial_accounts WHERE sale_id=$1 FOR UPDATE", [saleId]);
         if (account.rows[0]) {
-          const received = await client.query<{ total: number }>(`SELECT COALESCE(sum(fs.amount_cents),0)::int total FROM financial_settlements fs JOIN financial_installments i ON i.id=fs.installment_id WHERE i.account_id=$1`, [account.rows[0].id]);
+          const received = await client.query<{ total: number }>(`SELECT COALESCE(sum(fs.amount_cents),0)::int total FROM financial_settlements fs JOIN financial_installments i ON i.id=fs.installment_id WHERE i.account_id=$1 AND fs.reversed_at IS NULL`, [account.rows[0].id]);
           if (received.rows[0].total > 0) throw new AppError("Não é possível cancelar uma venda futura que já possui recebimentos. Estorne a liquidação primeiro.", 409, "FUTURE_ALREADY_SETTLED");
           await client.query("UPDATE financial_installments SET status='CANCELED',updated_at=now() WHERE account_id=$1", [account.rows[0].id]);
           await client.query("UPDATE financial_accounts SET status='CANCELED',updated_at=now() WHERE id=$1", [account.rows[0].id]);

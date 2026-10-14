@@ -1,6 +1,6 @@
 # Deploy no Coolify
 
-Este projeto usa um stack Docker Compose com aplicação Next.js, migration de execução única, PostgreSQL e dois volumes persistentes.
+Este projeto usa um stack Docker Compose com aplicação Next.js, migration de execução única, PostgreSQL e três volumes persistentes.
 
 ## 1. Criar o recurso
 
@@ -19,6 +19,8 @@ Cadastre antes do primeiro deploy:
 - `SEED_ADMIN_EMAIL` e `SEED_OPERATOR_EMAIL`.
 - `SEED_ADMIN_PASSWORD` e `SEED_OPERATOR_PASSWORD`, ambas com pelo menos 12 caracteres.
 - `SESSION_TTL_HOURS=12`, ou o tempo de sessão desejado.
+- `TOTP_ENCRYPTION_KEY` com uma chave longa e aleatória; mantenha o mesmo valor em todos os redeploys para não invalidar os segredos 2FA.
+- `HEALTH_MIN_STORAGE_FREE_PERCENT=10` e `BACKUP_RETENTION_DAYS=14`, ou os limites operacionais desejados.
 
 Para habilitar a distribuição de notas fiscais, cadastre como segredos:
 
@@ -55,8 +57,9 @@ Ao migrar para HTTPS, defina `SESSION_COOKIE_SECURE=true` e remova a publicaçã
 
 - `postgres_data`: dados do PostgreSQL.
 - `product_storage`: fotos dos produtos.
+- `backup_storage`: dumps do PostgreSQL, fotos compactadas e checksums.
 
-Configure um backup PostgreSQL diário, com retenção e cópia S3 externa. Configure também backup periódico do volume `product_storage`. Um volume persistente evita perda em um redeploy, mas não substitui backup. Faça ao menos um teste real de restauração.
+Agende diariamente `docker compose -f docker-compose.coolify.yml --profile maintenance run --rm backup` e copie o conteúdo de `backup_storage` para armazenamento externo. Um volume persistente evita perda em um redeploy, mas não substitui backup. Valide os checksums e faça ao menos um teste real de restauração por mês.
 
 ## 6. Verificação pós-deploy
 

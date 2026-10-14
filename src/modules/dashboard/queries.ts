@@ -26,7 +26,7 @@ export async function getDashboard() {
       SELECT to_char(d.report_date,'DD/MM') AS "day",
       COALESCE(sum(fs.amount_cents) FILTER (WHERE a.type='RECEIVABLE'),0)::int AS received_cents,
       COALESCE(sum(fs.amount_cents) FILTER (WHERE a.type='PAYABLE'),0)::int AS paid_cents
-      FROM days d LEFT JOIN financial_settlements fs ON (fs.occurred_at AT TIME ZONE 'America/Sao_Paulo')::date=d.report_date
+      FROM days d LEFT JOIN financial_settlements fs ON (fs.occurred_at AT TIME ZONE 'America/Sao_Paulo')::date=d.report_date AND fs.reversed_at IS NULL
       LEFT JOIN financial_installments i ON i.id=fs.installment_id LEFT JOIN financial_accounts a ON a.id=i.account_id GROUP BY d.report_date ORDER BY d.report_date`),
   ]);
   return { kpis: kpis.rows[0], stock: stock.rows[0], top: top.rows, payments: payments.rows, daily: daily.rows, financial: financial.rows[0], cashFlow: cashFlow.rows };

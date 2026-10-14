@@ -24,3 +24,6 @@ th { color: #667085; font-size: .75rem; text-transform: uppercase; letter-spacin
 .notice-error { color: #b42318; background: #fee4e2; padding: .7rem; border-radius: 8px; }
 .notice-ok { color: #067647; background: #dcfae6; padding: .7rem; border-radius: 8px; }
 @media (max-width: 800px) { .desktop-grid { grid-template-columns: 1fr !important; } }
+.label-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.print-label { background: white; border: 1px dashed #98a2b3; padding: 10px; width: 64mm; height: 38mm; overflow: hidden; }
+@media print { body { background: white; } .no-print, aside { display: none !important; } main { padding: 0 !important; } .label-sheet { display: grid; grid-template-columns: repeat(3, 64mm); gap: 2mm; } .print-label { break-inside: avoid; border: 1px solid #ddd; } }

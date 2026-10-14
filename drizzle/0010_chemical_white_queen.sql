@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "cash_sessions_one_open_register_uidx" ON "cash_sessions" USING btree ("register_id") WHERE "cash_sessions"."status" = 'OPEN';--> statement-breakpoint
+CREATE UNIQUE INDEX "cash_sessions_one_open_operator_uidx" ON "cash_sessions" USING btree ("operator_id") WHERE "cash_sessions"."status" = 'OPEN';

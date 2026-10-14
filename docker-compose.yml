@@ -24,6 +24,8 @@ services:
       DATABASE_URL: postgresql://coliseu:${POSTGRES_PASSWORD:-coliseu}@db:5432/coliseu
       STORAGE_PATH: /app/storage
       SESSION_TTL_HOURS: 12
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
+      HEALTH_MIN_STORAGE_FREE_PERCENT: ${HEALTH_MIN_STORAGE_FREE_PERCENT:-10}
       SEFAZ_ENABLED: ${SEFAZ_ENABLED:-false}
       SEFAZ_ENVIRONMENT: ${SEFAZ_ENVIRONMENT:-homologation}
       SEFAZ_CNPJ: ${SEFAZ_CNPJ:-}
@@ -52,6 +54,20 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
     restart: unless-stopped
+  backup:
+    build: { context: ., target: backup }
+    profiles: ["maintenance"]
+    environment:
+      DATABASE_URL: postgresql://coliseu:${POSTGRES_PASSWORD:-coliseu}@db:5432/coliseu
+      BACKUP_PATH: /backups
+      STORAGE_SOURCE_PATH: /storage
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - product_storage:/storage:ro
+      - backup_storage:/backups
+    depends_on:
+      db: { condition: service_healthy }
 volumes:
   postgres_data:
   product_storage:
+  backup_storage:

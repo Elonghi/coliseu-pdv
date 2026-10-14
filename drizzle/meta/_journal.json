@@ -64,6 +64,27 @@
       "when": 1791998905880,
       "tag": "0008_expand_splittable_products",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792007490566,
+      "tag": "0009_square_moonstone",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792007913675,
+      "tag": "0010_chemical_white_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792008048405,
+      "tag": "0011_open_famine",
+      "breakpoints": true
     }
   ]
 }

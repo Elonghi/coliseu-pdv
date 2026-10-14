@@ -1,0 +1,2 @@
+ALTER TABLE "purchase_order_items" DROP CONSTRAINT "purchase_order_items_values_valid";--> statement-breakpoint
+ALTER TABLE "purchase_order_items" ADD CONSTRAINT "purchase_order_items_values_valid" CHECK ("purchase_order_items"."ordered_quantity" > 0 AND "purchase_order_items"."received_quantity" >= 0 AND "purchase_order_items"."unit_cost_cents" >= 0);
