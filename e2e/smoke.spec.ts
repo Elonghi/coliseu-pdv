@@ -46,13 +46,13 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.getByRole("button", { name: "Importar XMLs" })).toBeVisible();
   });
 
-  test("financeiro é somente leitura e alimentado automaticamente", async ({ page }) => {
+  test("financeiro mantém contas automáticas e informa a baixa manual", async ({ page }) => {
     await login(page, adminEmail, seedPassword);
     await page.goto("/admin/finance");
     await expect(page.getByRole("heading", { name: "Contas a pagar e receber" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Duplicatas por fornecedor" })).toBeVisible();
     await expect(page.getByText("Contas e liquidações geradas automaticamente pelas operações do sistema.")).toBeVisible();
-    await expect(page.locator("main form")).toHaveCount(0);
+    await expect(page.getByText("Como a SEFAZ não informa pagamentos, a baixa das duplicatas é registrada manualmente.")).toBeVisible();
   });
 
   test("administrador encontra somente produtos habilitados para abrir", async ({ page }) => {

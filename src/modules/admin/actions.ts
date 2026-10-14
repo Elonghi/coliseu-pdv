@@ -12,6 +12,7 @@ import { cancelSale } from "@/modules/sales/service";
 import { adjustStock, splitProductIntoBoosters } from "@/modules/stock/service";
 import { adjustPlayerCredit, createPlayer, updatePlayer } from "@/modules/players/service";
 import { syncSefazDfe } from "@/modules/fiscal/service";
+import { settleFinancialInstallment } from "@/modules/finance/service";
 
 export type ActionState = { ok?: string; error?: string };
 const message = (error: unknown) => error instanceof Error ? error.message : "Não foi possível concluir a operação.";
@@ -76,6 +77,29 @@ export async function splitProductAction(_: ActionState, form: FormData): Promis
     }, user.id);
     revalidatePath("/admin/stock"); revalidatePath("/admin/products");
     return { ok: `${result.sourceQuantity} box(es) aberta(s): ${result.outputQuantity} boosters adicionados ao estoque com custo unitário de ${formatMoney(result.outputUnitCostCents)}.` };
+  } catch (error) { return { error: message(error) }; }
+}
+
+export async function financialSettlementAction(_: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    const user = await requireUser("ADMIN");
+    const installmentId = String(form.get("installmentId") ?? "");
+    const payable = await pool.query(`SELECT i.id FROM financial_installments i
+      JOIN financial_accounts a ON a.id=i.account_id
+      WHERE i.id=$1 AND a.type='PAYABLE' AND a.fiscal_invoice_id IS NOT NULL`, [installmentId]);
+    if (!payable.rowCount) throw new AppError("Duplicata de NF-e não encontrada.", 404);
+    await settleFinancialInstallment({
+      installmentId,
+      amountCents: parseMoney(String(form.get("amount") ?? "0")),
+      methodCode: String(form.get("methodCode") ?? ""),
+      occurredAt: String(form.get("occurredAt") ?? ""),
+      personName: String(form.get("personName") ?? ""),
+      notes: String(form.get("notes") ?? ""),
+    }, user.id);
+    revalidatePath("/admin");
+    revalidatePath("/admin/finance");
+    revalidatePath("/admin/fiscal");
+    return { ok: "Baixa registrada. Os saldos financeiro e da duplicata foram atualizados." };
   } catch (error) { return { error: message(error) }; }
 }
 
