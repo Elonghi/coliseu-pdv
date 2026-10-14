@@ -22,6 +22,13 @@ const string = (value: XmlValue | undefined): string | undefined => {
 };
 const integer = (value: XmlValue | undefined) => { const parsed = Number.parseInt(string(value) ?? "", 10); return Number.isFinite(parsed) ? parsed : undefined; };
 const date = (value: XmlValue | undefined) => { const parsed = string(value); return parsed && !Number.isNaN(Date.parse(parsed)) ? new Date(parsed) : undefined; };
+const dateOnly = (value: XmlValue | undefined) => {
+  const parsed = string(value);
+  if (!parsed || !/^\d{4}-\d{2}-\d{2}$/.test(parsed)) return undefined;
+  const [year, month, day] = parsed.split("-").map(Number);
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return candidate.getUTCFullYear() === year && candidate.getUTCMonth() === month - 1 && candidate.getUTCDate() === day ? parsed : undefined;
+};
 
 export function decimalToCents(value: XmlValue | undefined) {
   const raw = string(value);
@@ -101,11 +108,26 @@ export type NormalizedEvent = {
   statusMessage?: string;
 };
 
+export type NormalizedDuplicate = {
+  number?: string;
+  dueDate: string;
+  amountCents: number;
+};
+
+export type NormalizedBilling = {
+  invoiceNumber?: string;
+  originalCents?: number;
+  discountCents?: number;
+  netCents?: number;
+  duplicates: NormalizedDuplicate[];
+};
+
 export type NormalizedDfe = {
   kind: "SUMMARY" | "NFE" | "EVENT" | "UNKNOWN";
   accessKey?: string;
   invoice?: NormalizedInvoice;
   items: NormalizedItem[];
+  billing?: NormalizedBilling;
   event?: NormalizedEvent;
   parsed: Record<string, unknown>;
 };
@@ -182,7 +204,25 @@ function normalizeInvoice(root: XmlObject): NormalizedDfe {
       taxes: object(detail.imposto),
     } satisfies NormalizedItem;
   });
-  return { kind: "NFE", accessKey, invoice, items, parsed: { invoice, items } };
+  const billingNode = object(info.cobr);
+  const invoiceBilling = object(billingNode?.fat);
+  const duplicateNodes = array(billingNode?.dup);
+  const duplicates = duplicateNodes.map((entry, index) => {
+    const duplicate = object(entry) ?? {};
+    const dueDate = dateOnly(duplicate.dVenc);
+    const amountCents = decimalToCents(duplicate.vDup);
+    if (!dueDate) throw new Error(`Duplicata ${index + 1} sem data de vencimento válida.`);
+    if (!amountCents || amountCents <= 0) throw new Error(`Duplicata ${index + 1} sem valor válido.`);
+    return { number: string(duplicate.nDup), dueDate, amountCents } satisfies NormalizedDuplicate;
+  });
+  const billing = billingNode ? {
+    invoiceNumber: string(invoiceBilling?.nFat),
+    originalCents: decimalToCents(invoiceBilling?.vOrig),
+    discountCents: decimalToCents(invoiceBilling?.vDesc),
+    netCents: decimalToCents(invoiceBilling?.vLiq),
+    duplicates,
+  } satisfies NormalizedBilling : undefined;
+  return { kind: "NFE", accessKey, invoice, items, billing, parsed: { invoice, items, ...(billing ? { billing } : {}) } };
 }
 
 function normalizeEvent(root: XmlObject): NormalizedDfe {

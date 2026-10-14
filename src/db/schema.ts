@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["ADMIN", "OPERATOR"]);
 export const saleStatus = pgEnum("sale_status", ["CONFIRMED", "CANCELED"]);
@@ -110,18 +110,20 @@ export const financialAccounts = pgTable("financial_accounts", {
   counterpartyName: varchar("counterparty_name", { length: 180 }).notNull(),
   playerId: uuid("player_id").references(() => players.id, { onDelete: "restrict" }),
   saleId: integer("sale_id").references(() => sales.id, { onDelete: "restrict" }),
+  fiscalInvoiceId: uuid("fiscal_invoice_id").references((): AnyPgColumn => fiscalInvoices.id, { onDelete: "restrict" }),
   issueDate: date("issue_date").notNull(),
   totalCents: integer("total_cents").notNull(),
   status: financialStatus("status").default("OPEN").notNull(),
   notes: text("notes"),
-  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "restrict" }),
   ...timestamps,
-}, (t) => [check("financial_accounts_total_positive", sql`${t.totalCents} > 0`), index("financial_accounts_type_status_idx").on(t.type, t.status), index("financial_accounts_sale_idx").on(t.saleId), index("financial_accounts_player_idx").on(t.playerId), index("financial_accounts_created_idx").on(t.createdAt)]);
+}, (t) => [check("financial_accounts_total_positive", sql`${t.totalCents} > 0`), index("financial_accounts_type_status_idx").on(t.type, t.status), index("financial_accounts_sale_idx").on(t.saleId), index("financial_accounts_player_idx").on(t.playerId), uniqueIndex("financial_accounts_fiscal_invoice_uidx").on(t.fiscalInvoiceId), index("financial_accounts_created_idx").on(t.createdAt)]);
 
 export const financialInstallments = pgTable("financial_installments", {
   id: uuid("id").defaultRandom().primaryKey(),
   accountId: uuid("account_id").notNull().references(() => financialAccounts.id, { onDelete: "restrict" }),
   installmentNumber: integer("installment_number").notNull(),
+  sourceReference: varchar("source_reference", { length: 60 }),
   dueDate: date("due_date").notNull(),
   amountCents: integer("amount_cents").notNull(),
   settledCents: integer("settled_cents").default(0).notNull(),

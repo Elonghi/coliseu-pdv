@@ -5,6 +5,7 @@ import { AppError } from "@/lib/errors";
 import { distributeDfe } from "./client";
 import { getFiscalIdentityConfig, getSefazConfig, type FiscalIdentityConfig, type SefazConfig } from "./config";
 import { manifestationLabel, normalizeDfeXml, type NormalizedDfe } from "./xml";
+import { cancelFiscalPayable, createPayableFromFiscalInvoice } from "@/modules/finance/service";
 
 type SyncState = { id: string; last_nsu: string; max_nsu: string; next_sync_at: Date };
 export type SefazSyncResult = { status: "completed" | "deferred" | "running"; documents: number; batches: number; lastNsu?: string; maxNsu?: string; message: string };
@@ -16,7 +17,7 @@ async function ensureSyncState(client: PoolClient, config: FiscalIdentityConfig)
     RETURNING id,last_nsu,max_nsu,next_sync_at`, [config.cnpj, config.environment, config.ufCode])).rows[0];
 }
 
-async function persistInvoice(client: PoolClient, stateId: string, sourceDocumentId: string, normalized: NormalizedDfe) {
+async function persistInvoice(client: PoolClient, stateId: string, sourceDocumentId: string, normalized: NormalizedDfe, companyCnpj: string, actorId?: string) {
   const invoice = normalized.invoice;
   if (!invoice) return null;
   const result = await client.query<{ id: string }>(`INSERT INTO fiscal_invoices
@@ -49,6 +50,23 @@ async function persistInvoice(client: PoolClient, stateId: string, sourceDocumen
     ORDER BY event_at DESC NULLS LAST,created_at DESC LIMIT 1`, [invoiceId]);
   const manifestationStatus = manifestationLabel(manifestation.rows[0]?.event_type);
   if (manifestationStatus) await client.query("UPDATE fiscal_invoices SET manifestation_status=$1,updated_at=now() WHERE id=$2", [manifestationStatus, invoiceId]);
+  const current = await client.query<{ status: string }>("SELECT status FROM fiscal_invoices WHERE id=$1", [invoiceId]);
+  if (current.rows[0]?.status === "CANCELED") {
+    await cancelFiscalPayable(client, invoiceId);
+  } else if (invoice.hasFullXml && current.rows[0]?.status === "AUTHORIZED" && normalizeDocument(invoice.recipientCnpjCpf) === normalizeDocument(companyCnpj) && normalized.billing?.duplicates.length) {
+    await createPayableFromFiscalInvoice(client, {
+      fiscalInvoiceId: invoiceId,
+      actorId,
+      accessKey: invoice.accessKey,
+      number: invoice.number,
+      series: invoice.series,
+      issuerName: invoice.issuerName,
+      issuerDocument: invoice.issuerCnpjCpf,
+      issueAt: invoice.issueAt,
+      billingNumber: normalized.billing.invoiceNumber,
+      duplicates: normalized.billing.duplicates,
+    });
+  }
   return invoiceId;
 }
 
@@ -61,17 +79,20 @@ async function persistEvent(client: PoolClient, stateId: string, sourceDocumentI
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (source_document_id) DO UPDATE SET invoice_id=COALESCE(excluded.invoice_id,fiscal_invoice_events.invoice_id),status_code=excluded.status_code,status_message=excluded.status_message`, [sourceDocumentId, invoiceId, event.accessKey ?? null, event.eventType ?? null, event.sequence ?? null, event.eventAt ?? null, event.protocol ?? null, event.statusCode ?? null, event.statusMessage ?? null]);
   const accepted = Boolean(event.protocol) && (!event.statusCode || ["135", "136", "155"].includes(event.statusCode));
   if (!invoiceId || !accepted) return;
-  if (event.eventType === "110111") await client.query("UPDATE fiscal_invoices SET status='CANCELED',updated_at=now() WHERE id=$1", [invoiceId]);
+  if (event.eventType === "110111") {
+    await client.query("UPDATE fiscal_invoices SET status='CANCELED',updated_at=now() WHERE id=$1", [invoiceId]);
+    await cancelFiscalPayable(client, invoiceId);
+  }
   const manifestation = manifestationLabel(event.eventType);
   if (manifestation) await client.query("UPDATE fiscal_invoices SET manifestation_status=$1,updated_at=now() WHERE id=$2", [manifestation, invoiceId]);
 }
 
-async function persistDocument(client: PoolClient, stateId: string, document: { nsu: string; schema: string; xml: string }) {
+async function persistDocument(client: PoolClient, stateId: string, document: { nsu: string; schema: string; xml: string }, companyCnpj: string, actorId?: string) {
   const normalized = normalizeDfeXml(document.xml);
   const source = await client.query<{ id: string }>(`INSERT INTO fiscal_dfe_documents (sync_state_id,nsu,schema,kind,access_key,raw_xml,parsed)
     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (sync_state_id,nsu) DO UPDATE SET schema=excluded.schema,kind=excluded.kind,access_key=excluded.access_key,raw_xml=excluded.raw_xml,parsed=excluded.parsed,received_at=now()
     RETURNING id`, [stateId, document.nsu, document.schema, normalized.kind, normalized.accessKey ?? null, document.xml, JSON.stringify(normalized.parsed)]);
-  await persistInvoice(client, stateId, source.rows[0].id, normalized);
+  await persistInvoice(client, stateId, source.rows[0].id, normalized, companyCnpj, actorId);
   await persistEvent(client, stateId, source.rows[0].id, normalized);
 }
 
@@ -124,17 +145,18 @@ export async function importFiscalXmlBatch(
 
         await client.query("BEGIN");
         transactionOpen = true;
-        const existing = await client.query<{ has_full_xml: boolean }>("SELECT has_full_xml FROM fiscal_invoices WHERE sync_state_id=$1 AND access_key=$2 FOR UPDATE", [state.id, invoice.accessKey]);
+        const existing = await client.query<{ has_full_xml: boolean; source_document_id: string | null }>("SELECT has_full_xml,source_document_id FROM fiscal_invoices WHERE sync_state_id=$1 AND access_key=$2 FOR UPDATE", [state.id, invoice.accessKey]);
         if (existing.rows[0]?.has_full_xml) {
+          if (existing.rows[0].source_document_id) await persistInvoice(client, state.id, existing.rows[0].source_document_id, normalized, identity.cnpj, actorId);
           await client.query("COMMIT");
           transactionOpen = false;
-          results.push({ fileName, status: "DUPLICATE", accessKey: invoice.accessKey, message: "Esta NF-e completa já estava cadastrada." });
+          results.push({ fileName, status: "DUPLICATE", accessKey: invoice.accessKey, message: "NF-e já cadastrada; duplicatas financeiras verificadas." });
           continue;
         }
         const source = await client.query<{ id: string }>(`INSERT INTO fiscal_dfe_documents
           (sync_state_id,import_batch_id,nsu,schema,kind,access_key,original_file_name,content_hash,raw_xml,parsed)
           VALUES ($1,$2,NULL,$3,'NFE',$4,$5,$6,$7,$8) RETURNING id`, [state.id, batchId, `procNFe_v${invoice.xmlVersion ?? "4.00"}.xsd`, invoice.accessKey, fileName, contentHash, xml, JSON.stringify(normalized.parsed)]);
-        await persistInvoice(client, state.id, source.rows[0].id, normalized);
+        await persistInvoice(client, state.id, source.rows[0].id, normalized, identity.cnpj, actorId);
         await client.query("COMMIT");
         transactionOpen = false;
         results.push({ fileName, status: "IMPORTED", accessKey: invoice.accessKey, message: "NF-e importada com sucesso." });
@@ -201,7 +223,7 @@ export async function syncSefazDfe(actorId?: string, options: SyncOptions = {}):
       }
       await client.query("BEGIN");
       try {
-        for (const document of response.documents) await persistDocument(client, state.id, document);
+        for (const document of response.documents) await persistDocument(client, state.id, document, config.cnpj, actorId);
         lastNsu = response.lastNsu;
         maxNsu = response.maxNsu;
         documents += response.documents.length;

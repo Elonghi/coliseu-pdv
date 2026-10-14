@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { PoolClient } from "pg";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
 import { applyPlayerCreditMovement } from "@/modules/players/service";
@@ -24,6 +25,56 @@ function installmentDates(issueDate: string, terms: string) {
     date.setUTCDate(date.getUTCDate() + day);
     return date.toISOString().slice(0, 10);
   });
+}
+
+type FiscalPayableInput = {
+  fiscalInvoiceId: string;
+  actorId?: string;
+  accessKey: string;
+  number?: string;
+  series?: string;
+  issuerName?: string;
+  issuerDocument?: string;
+  issueAt?: Date;
+  billingNumber?: string;
+  duplicates: { number?: string; dueDate: string; amountCents: number }[];
+};
+
+const saoPauloDate = (value: Date) => new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+}).format(value);
+
+export async function createPayableFromFiscalInvoice(client: PoolClient, input: FiscalPayableInput) {
+  if (!input.duplicates.length) return null;
+  const totalCents = input.duplicates.reduce((total, duplicate) => total + duplicate.amountCents, 0);
+  if (!Number.isSafeInteger(totalCents) || totalCents <= 0 || totalCents > 2_147_483_647) {
+    throw new AppError("O total das duplicatas da NF-e não pode ser registrado no contas a pagar.", 422, "FISCAL_DUPLICATES_TOTAL");
+  }
+  const label = input.number ? `NF-e ${input.number}${input.series ? ` · Série ${input.series}` : ""}` : `NF-e ${input.accessKey}`;
+  const notes = [`Gerada automaticamente pelas duplicatas do XML.`, `Chave de acesso: ${input.accessKey}`, input.billingNumber ? `Fatura: ${input.billingNumber}` : null].filter(Boolean).join("\n");
+  const account = await client.query<{ id: string }>(`INSERT INTO financial_accounts
+    (type,description,counterparty_name,fiscal_invoice_id,issue_date,total_cents,notes,created_by_id)
+    VALUES ('PAYABLE',$1,$2,$3,$4,$5,$6,$7)
+    ON CONFLICT (fiscal_invoice_id) DO NOTHING RETURNING id`, [label.slice(0, 220), (input.issuerName || input.issuerDocument || "Fornecedor da NF-e").slice(0, 180), input.fiscalInvoiceId, saoPauloDate(input.issueAt ?? new Date()), totalCents, notes, input.actorId ?? null]);
+  const accountId = account.rows[0]?.id;
+  if (!accountId) return null;
+  for (const [index, duplicate] of input.duplicates.entries()) {
+    await client.query(`INSERT INTO financial_installments (account_id,installment_number,source_reference,due_date,amount_cents)
+      VALUES ($1,$2,$3,$4,$5)`, [accountId, index + 1, duplicate.number?.slice(0, 60) ?? null, duplicate.dueDate, duplicate.amountCents]);
+  }
+  if (input.actorId) await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'FISCAL_PAYABLE_CREATE','financial_account',$2,$3)", [input.actorId, accountId, JSON.stringify({ fiscalInvoiceId: input.fiscalInvoiceId, accessKey: input.accessKey, totalCents, installments: input.duplicates.length })]);
+  return accountId;
+}
+
+export async function cancelFiscalPayable(client: PoolClient, fiscalInvoiceId: string) {
+  const account = await client.query<{ id: string }>(`SELECT a.id FROM financial_accounts a
+    WHERE a.fiscal_invoice_id=$1 AND NOT EXISTS (SELECT 1 FROM financial_settlements s JOIN financial_installments i ON i.id=s.installment_id WHERE i.account_id=a.id)
+    FOR UPDATE`, [fiscalInvoiceId]);
+  const accountId = account.rows[0]?.id;
+  if (!accountId) return false;
+  await client.query("UPDATE financial_installments SET status='CANCELED',updated_at=now() WHERE account_id=$1 AND status<>'CANCELED'", [accountId]);
+  await client.query("UPDATE financial_accounts SET status='CANCELED',updated_at=now() WHERE id=$1", [accountId]);
+  return true;
 }
 
 export async function createFinancialAccount(input: unknown, userId: string) {
