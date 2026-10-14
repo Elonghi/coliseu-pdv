@@ -1,0 +1,7 @@
+FROM postgres:17-alpine
+
+RUN apk add --no-cache tar
+COPY scripts/backup.sh /usr/local/bin/coliseu-backup
+RUN chmod +x /usr/local/bin/coliseu-backup
+
+ENTRYPOINT ["/usr/local/bin/coliseu-backup"]

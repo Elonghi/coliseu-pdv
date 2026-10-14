@@ -55,7 +55,7 @@ services:
       migrate: { condition: service_completed_successfully }
     restart: unless-stopped
   backup:
-    build: { context: ., target: backup }
+    build: { context: ., dockerfile: Dockerfile.backup }
     profiles: ["maintenance"]
     environment:
       DATABASE_URL: postgresql://coliseu:${POSTGRES_PASSWORD:-coliseu}@db:5432/coliseu

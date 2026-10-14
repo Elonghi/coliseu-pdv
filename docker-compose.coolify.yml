@@ -96,7 +96,7 @@ services:
   backup:
     build:
       context: .
-      target: backup
+      dockerfile: Dockerfile.backup
     profiles: ["maintenance"]
     environment:
       DATABASE_URL: postgresql://coliseu:${SERVICE_PASSWORD_64_POSTGRES}@db:5432/coliseu
