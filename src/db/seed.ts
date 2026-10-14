@@ -27,6 +27,8 @@ type SeedProduct = {
   maxDiscountBps: number;
   stock: number;
   minimumStock: number;
+  splittable?: boolean;
+  looseBooster?: boolean;
 };
 
 async function upsertUser(name: string, email: string, password: string, role: Role) {
@@ -74,15 +76,15 @@ async function main() {
     { sku: "SAL-001", name: "Salgadinho 100g", description: "Salgadinho para consumo durante partidas e eventos.", category: "Snacks", unit: "UN", costCents: 250, priceCents: 550, maxDiscountBps: 800, stock: 35, minimumStock: 8 },
     { sku: "CHO-001", name: "Chocolate ao leite 90g", description: "Barra de chocolate ao leite de 90g.", category: "Snacks", unit: "UN", costCents: 350, priceCents: 700, maxDiscountBps: 800, stock: 30, minimumStock: 6 },
 
-    { sku: "MTG-FDN-BST", name: "Magic Foundations — Play Booster", description: "Booster avulso de Magic: The Gathering Foundations com 14 cards.", category: "Magic: The Gathering", unit: "PCT", costCents: 2800, priceCents: 4490, maxDiscountBps: 500, stock: 48, minimumStock: 12 },
-    { sku: "MTG-FDN-BOX", name: "Magic Foundations — Play Booster Box (36)", description: "Display lacrado com 36 Play Boosters de Magic: The Gathering Foundations.", category: "Magic: The Gathering", unit: "CX", costCents: 110000, priceCents: 139990, maxDiscountBps: 500, stock: 6, minimumStock: 2 },
-    { sku: "MTG-FDN-COL", name: "Magic Foundations — Collector Booster", description: "Collector Booster avulso de Foundations com cards especiais e tratamentos premium.", category: "Magic: The Gathering", unit: "PCT", costCents: 11500, priceCents: 15990, maxDiscountBps: 500, stock: 12, minimumStock: 3 },
+    { sku: "MTG-FDN-BST", name: "Magic Foundations — Play Booster", description: "Booster avulso de Magic: The Gathering Foundations com 14 cards.", category: "Magic: The Gathering", unit: "PCT", costCents: 2800, priceCents: 4490, maxDiscountBps: 500, stock: 48, minimumStock: 12, looseBooster: true },
+    { sku: "MTG-FDN-BOX", name: "Magic Foundations — Play Booster Box (36)", description: "Display lacrado com 36 Play Boosters de Magic: The Gathering Foundations.", category: "Magic: The Gathering", unit: "CX", costCents: 110000, priceCents: 139990, maxDiscountBps: 500, stock: 6, minimumStock: 2, splittable: true },
+    { sku: "MTG-FDN-COL", name: "Magic Foundations — Collector Booster", description: "Collector Booster avulso de Foundations com cards especiais e tratamentos premium.", category: "Magic: The Gathering", unit: "PCT", costCents: 11500, priceCents: 15990, maxDiscountBps: 500, stock: 12, minimumStock: 3, looseBooster: true },
     { sku: "MTG-FDN-BDL", name: "Magic Foundations — Bundle", description: "Bundle de Foundations com 9 Play Boosters, terrenos, marcador spindown e deck box.", category: "Magic: The Gathering", unit: "UN", costCents: 35000, priceCents: 44990, maxDiscountBps: 500, stock: 8, minimumStock: 2 },
-    { sku: "MTG-FF-BOX", name: "Magic FINAL FANTASY — Play Booster Box (30)", description: "Box lacrada de Magic: The Gathering—FINAL FANTASY com 30 Play Boosters.", category: "Magic: The Gathering", unit: "CX", costCents: 145000, priceCents: 179990, maxDiscountBps: 300, stock: 4, minimumStock: 1 },
+    { sku: "MTG-FF-BOX", name: "Magic FINAL FANTASY — Play Booster Box (30)", description: "Box lacrada de Magic: The Gathering—FINAL FANTASY com 30 Play Boosters.", category: "Magic: The Gathering", unit: "CX", costCents: 145000, priceCents: 179990, maxDiscountBps: 300, stock: 4, minimumStock: 1, splittable: true },
     { sku: "MTG-MH3-CMD", name: "Magic Modern Horizons 3 — Commander Deck Eldrazi Incursion", description: "Deck Commander pronto para jogar com 100 cards e Collector Booster Sample Pack.", category: "Magic: The Gathering", unit: "UN", costCents: 70000, priceCents: 89990, maxDiscountBps: 500, stock: 5, minimumStock: 1 },
 
     { sku: "PKM-TRP-001", name: "Pokémon TCG — Triple Pack Blister", description: "Triple pack com 3 boosters de Pokémon TCG e carta promocional.", category: "Pokémon TCG", unit: "UN", costCents: 9000, priceCents: 12990, maxDiscountBps: 500, stock: 16, minimumStock: 4 },
-    { sku: "PKM-SSP-BST", name: "Pokémon Scarlet & Violet—Surging Sparks Booster", description: "Booster avulso da expansão Scarlet & Violet—Surging Sparks.", category: "Pokémon TCG", unit: "PCT", costCents: 1900, priceCents: 2990, maxDiscountBps: 500, stock: 48, minimumStock: 12 },
+    { sku: "PKM-SSP-BST", name: "Pokémon Scarlet & Violet—Surging Sparks Booster", description: "Booster avulso da expansão Scarlet & Violet—Surging Sparks.", category: "Pokémon TCG", unit: "PCT", costCents: 1900, priceCents: 2990, maxDiscountBps: 500, stock: 48, minimumStock: 12, looseBooster: true },
     { sku: "PKM-SSP-ETB", name: "Pokémon Surging Sparks — Elite Trainer Box", description: "Elite Trainer Box com boosters, sleeves, dados, marcadores e acessórios para jogo.", category: "Pokémon TCG", unit: "CX", costCents: 30000, priceCents: 39990, maxDiscountBps: 500, stock: 7, minimumStock: 2 },
     { sku: "PKM-CHAR-LBD", name: "Pokémon TCG — Charizard ex League Battle Deck", description: "League Battle Deck de Charizard ex pronto para jogar.", category: "Pokémon TCG", unit: "UN", costCents: 19000, priceCents: 24990, maxDiscountBps: 500, stock: 9, minimumStock: 2 },
 
@@ -97,12 +99,13 @@ async function main() {
     const existing = await pool.query<{ id: string }>("SELECT id FROM products WHERE sku=$1", [product.sku]);
     if (existing.rows[0]) {
       productIds.set(product.sku, existing.rows[0].id);
+      await pool.query("UPDATE products SET can_split_into_boosters=$1,is_loose_booster=$2,updated_at=now() WHERE id=$3", [product.splittable ?? false, product.looseBooster ?? false, existing.rows[0].id]);
       continue;
     }
     const inserted = await pool.query<{ id: string }>(`INSERT INTO products
-      (sku,name,description,category_id,unit_id,cost_cents,sale_price_cents,max_discount_bps,stock_quantity,minimum_stock)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-    [product.sku, product.name, product.description, categoryIds.get(product.category), unitIds.get(product.unit), product.costCents, product.priceCents, product.maxDiscountBps, product.stock, product.minimumStock]);
+      (sku,name,description,category_id,unit_id,cost_cents,sale_price_cents,max_discount_bps,stock_quantity,minimum_stock,can_split_into_boosters,is_loose_booster)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+    [product.sku, product.name, product.description, categoryIds.get(product.category), unitIds.get(product.unit), product.costCents, product.priceCents, product.maxDiscountBps, product.stock, product.minimumStock, product.splittable ?? false, product.looseBooster ?? false]);
     const id = inserted.rows[0].id;
     productIds.set(product.sku, id);
     insertedCount++;

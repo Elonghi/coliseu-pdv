@@ -4,7 +4,7 @@ import { ActionForm } from "./action-form";
 import { productAction } from "@/modules/admin/actions";
 
 type Option = { id: string; name: string; code?: string };
-type Product = { id: string; sku: string; barcode: string | null; name: string; description: string | null; category_id: string; unit_id: string; cost_cents: number; sale_price_cents: number; max_discount_bps: number; minimum_stock: number; stock_quantity: number; active: boolean; image_key: string | null };
+type Product = { id: string; sku: string; barcode: string | null; name: string; description: string | null; category_id: string; unit_id: string; cost_cents: number; sale_price_cents: number; max_discount_bps: number; minimum_stock: number; stock_quantity: number; can_split_into_boosters: boolean; is_loose_booster: boolean; active: boolean; image_key: string | null };
 export function ProductForm({ categories, units, product }: { categories: Option[]; units: Option[]; product?: Product }) {
   return <ActionForm action={productAction} className="card p-5 grid gap-5 max-w-4xl" >
     {product && <input type="hidden" name="id" value={product.id}/>}<div className="grid md:grid-cols-2 gap-4"><label className="label">SKU<input className="field" name="sku" defaultValue={product?.sku} required/></label><label className="label">Código de barras<input className="field" name="barcode" defaultValue={product?.barcode ?? ""}/></label></div>
@@ -14,6 +14,6 @@ export function ProductForm({ categories, units, product }: { categories: Option
     {!product && <label className="label">Estoque inicial<input className="field" type="number" name="initialStock" min="0" defaultValue="0" required/></label>}
     {product && <p className="rounded-lg bg-slate-100 p-3 text-sm"><b>Estoque atual:</b> {product.stock_quantity}. Use a tela de estoque para alterá-lo com histórico.</p>}
     <label className="label">Foto (JPEG, PNG ou WebP; até 5 MB)<input className="field" type="file" name="image" accept="image/jpeg,image/png,image/webp"/></label>{product?.image_key && <img src={`/api/uploads/${product.image_key}`} alt={product.name} className="w-28 h-28 object-cover rounded-xl border"/>}
-    <label className="flex items-center gap-2 font-bold"><input type="checkbox" name="active" value="true" defaultChecked={product?.active ?? true}/> Produto ativo</label>
+    <div className="grid gap-2"><label className="flex items-center gap-2 font-bold"><input type="checkbox" name="canSplitIntoBoosters" value="true" defaultChecked={product?.can_split_into_boosters ?? false}/> Pode ser aberto em boosters</label><label className="flex items-center gap-2 font-bold"><input type="checkbox" name="isLooseBooster" value="true" defaultChecked={product?.is_loose_booster ?? false}/> Booster avulso</label><p className="text-sm text-gray-500">Somente produtos habilitados podem ser abertos. Boosters avulsos nunca podem ser divididos novamente.</p><label className="flex items-center gap-2 font-bold"><input type="checkbox" name="active" value="true" defaultChecked={product?.active ?? true}/> Produto ativo</label></div>
   </ActionForm>;
 }

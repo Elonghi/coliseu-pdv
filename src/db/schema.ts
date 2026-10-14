@@ -3,7 +3,7 @@ import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, p
 
 export const userRole = pgEnum("user_role", ["ADMIN", "OPERATOR"]);
 export const saleStatus = pgEnum("sale_status", ["CONFIRMED", "CANCELED"]);
-export const stockMovementType = pgEnum("stock_movement_type", ["INITIAL", "MANUAL_IN", "MANUAL_ADJUSTMENT", "SALE", "SALE_CANCELLATION", "RETURN", "FISCAL_ENTRY", "FISCAL_CANCELLATION"]);
+export const stockMovementType = pgEnum("stock_movement_type", ["INITIAL", "MANUAL_IN", "MANUAL_ADJUSTMENT", "SALE", "SALE_CANCELLATION", "RETURN", "FISCAL_ENTRY", "FISCAL_CANCELLATION", "BOX_SPLIT_OUT", "BOOSTER_SPLIT_IN"]);
 export const financialAccountType = pgEnum("financial_account_type", ["PAYABLE", "RECEIVABLE"]);
 export const financialStatus = pgEnum("financial_status", ["OPEN", "PARTIAL", "SETTLED", "CANCELED"]);
 export const playerCreditMovementType = pgEnum("player_credit_movement_type", ["MANUAL", "SALE_CREDIT", "FUTURE_CHARGE", "FUTURE_PAYMENT", "SALE_REVERSAL"]);
@@ -53,6 +53,8 @@ export const products = pgTable("products", {
   costCents: integer("cost_cents").notNull(), salePriceCents: integer("sale_price_cents").notNull(),
   maxDiscountBps: integer("max_discount_bps").default(0).notNull(),
   stockQuantity: integer("stock_quantity").default(0).notNull(), minimumStock: integer("minimum_stock").default(0).notNull(),
+  canSplitIntoBoosters: boolean("can_split_into_boosters").default(false).notNull(),
+  isLooseBooster: boolean("is_loose_booster").default(false).notNull(),
   active: boolean("active").default(true).notNull(), ...timestamps,
 }, (t) => [
   check("products_money_nonnegative", sql`${t.costCents} >= 0 AND ${t.salePriceCents} >= 0`),
@@ -82,6 +84,23 @@ export const players = pgTable("players", {
   active: boolean("active").default(true).notNull(),
   ...timestamps,
 }, (t) => [index("players_name_idx").on(t.name), index("players_active_idx").on(t.active), index("players_email_idx").on(t.email)]);
+
+export const productSplits = pgTable("product_splits", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sourceProductId: uuid("source_product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
+  outputProductId: uuid("output_product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
+  sourceQuantity: integer("source_quantity").default(1).notNull(),
+  outputQuantity: integer("output_quantity").notNull(),
+  sourceUnitCostCents: integer("source_unit_cost_cents").notNull(),
+  outputUnitCostCents: integer("output_unit_cost_cents").notNull(),
+  outputSalePriceCents: integer("output_sale_price_cents").notNull(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  check("product_splits_values_valid", sql`${t.sourceQuantity} > 0 AND ${t.outputQuantity} > 1 AND ${t.sourceUnitCostCents} >= 0 AND ${t.outputUnitCostCents} >= 0 AND ${t.outputSalePriceCents} > 0`),
+  index("product_splits_source_date_idx").on(t.sourceProductId, t.createdAt),
+  index("product_splits_output_date_idx").on(t.outputProductId, t.createdAt),
+]);
 
 export const sales = pgTable("sales", {
   id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
@@ -170,9 +189,9 @@ export const playerCreditMovements = pgTable("player_credit_movements", {
 export const stockMovements = pgTable("stock_movements", {
   id: uuid("id").defaultRandom().primaryKey(), productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
   type: stockMovementType("type").notNull(), quantityDelta: integer("quantity_delta").notNull(), previousQuantity: integer("previous_quantity").notNull(), newQuantity: integer("new_quantity").notNull(),
-  saleId: integer("sale_id").references(() => sales.id, { onDelete: "restrict" }), fiscalInvoiceItemId: uuid("fiscal_invoice_item_id").references((): AnyPgColumn => fiscalInvoiceItems.id, { onDelete: "restrict" }), userId: uuid("user_id").references(() => users.id, { onDelete: "restrict" }), notes: text("notes"),
+  saleId: integer("sale_id").references(() => sales.id, { onDelete: "restrict" }), fiscalInvoiceItemId: uuid("fiscal_invoice_item_id").references((): AnyPgColumn => fiscalInvoiceItems.id, { onDelete: "restrict" }), productSplitId: uuid("product_split_id").references(() => productSplits.id, { onDelete: "restrict" }), userId: uuid("user_id").references(() => users.id, { onDelete: "restrict" }), notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [index("stock_movements_product_date_idx").on(t.productId, t.createdAt), index("stock_movements_sale_idx").on(t.saleId), index("stock_movements_fiscal_item_idx").on(t.fiscalInvoiceItemId), uniqueIndex("stock_movements_fiscal_item_type_uidx").on(t.fiscalInvoiceItemId, t.type)]);
+}, (t) => [index("stock_movements_product_date_idx").on(t.productId, t.createdAt), index("stock_movements_sale_idx").on(t.saleId), index("stock_movements_fiscal_item_idx").on(t.fiscalInvoiceItemId), index("stock_movements_product_split_idx").on(t.productSplitId), uniqueIndex("stock_movements_fiscal_item_type_uidx").on(t.fiscalInvoiceItemId, t.type)]);
 
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(), userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),

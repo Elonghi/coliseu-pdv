@@ -4,12 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
-import { parseMoney } from "@/lib/money";
+import { formatMoney, parseMoney } from "@/lib/money";
 import { requireUser } from "@/modules/auth/session";
 import { createProduct, updateProduct, type ProductInput } from "@/modules/catalog/service";
 import { removeImage, saveProductImage } from "@/modules/catalog/storage";
 import { cancelSale } from "@/modules/sales/service";
-import { adjustStock } from "@/modules/stock/service";
+import { adjustStock, splitProductIntoBoosters } from "@/modules/stock/service";
 import { adjustPlayerCredit, createPlayer, updatePlayer } from "@/modules/players/service";
 import { syncSefazDfe } from "@/modules/fiscal/service";
 
@@ -33,7 +33,7 @@ function productInput(form: FormData): ProductInput {
   return {
     sku: String(form.get("sku") ?? ""), barcode: String(form.get("barcode") ?? "") || null, name: String(form.get("name") ?? ""), description: String(form.get("description") ?? "") || null,
     categoryId: String(form.get("categoryId") ?? ""), unitId: String(form.get("unitId") ?? ""), costCents: parseMoney(String(form.get("cost") ?? "0")), salePriceCents: parseMoney(String(form.get("price") ?? "0")),
-    maxDiscountBps: Math.round(Number(form.get("maxDiscount") ?? 0) * 100), minimumStock: Number(form.get("minimumStock") ?? 0), active: form.get("active") === "true",
+    maxDiscountBps: Math.round(Number(form.get("maxDiscount") ?? 0) * 100), minimumStock: Number(form.get("minimumStock") ?? 0), canSplitIntoBoosters: form.get("canSplitIntoBoosters") === "true", isLooseBooster: form.get("isLooseBooster") === "true", active: form.get("active") === "true",
   };
 }
 
@@ -61,6 +61,20 @@ export async function stockAction(_: ActionState, form: FormData): Promise<Actio
     const type = String(form.get("type")) as "MANUAL_IN" | "MANUAL_ADJUSTMENT" | "RETURN";
     await adjustStock(String(form.get("productId")), Number(form.get("quantity")), type, String(form.get("notes") ?? ""), user.id);
     revalidatePath("/admin/stock"); return { ok: "Estoque atualizado e movimentação registrada." };
+  } catch (error) { return { error: message(error) }; }
+}
+
+export async function splitProductAction(_: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    const user = await requireUser("ADMIN");
+    const result = await splitProductIntoBoosters({
+      sourceProductId: String(form.get("sourceProductId") ?? ""),
+      outputProductName: String(form.get("outputProductName") ?? ""),
+      outputQuantity: Number(form.get("outputQuantity") ?? 0),
+      outputSalePriceCents: parseMoney(String(form.get("outputSalePrice") ?? "0")),
+    }, user.id);
+    revalidatePath("/admin/stock"); revalidatePath("/admin/products");
+    return { ok: `Box aberta: ${result.outputQuantity} boosters adicionados ao estoque com custo unitário de ${formatMoney(result.outputUnitCostCents)}.` };
   } catch (error) { return { error: message(error) }; }
 }
 

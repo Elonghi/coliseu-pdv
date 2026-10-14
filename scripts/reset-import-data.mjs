@@ -20,7 +20,7 @@ let productImageKeys = [];
 try {
   await client.query("BEGIN");
   await client.query("SET LOCAL lock_timeout = '30s'");
-  await client.query(`LOCK TABLE players,products,supplier_product_mappings,sales,sale_items,payments,
+  await client.query(`LOCK TABLE players,products,product_splits,supplier_product_mappings,sales,sale_items,payments,
     player_credit_movements,stock_movements,financial_settlements,financial_installments,financial_accounts,
     fiscal_invoice_events,fiscal_invoice_items,fiscal_invoices,fiscal_dfe_documents,fiscal_import_batches
     IN ACCESS EXCLUSIVE MODE`);
@@ -45,6 +45,7 @@ try {
   await client.query("UPDATE players SET credit_balance_cents=0,updated_at=now() WHERE credit_balance_cents<>0");
   await client.query("DELETE FROM payments");
   await client.query("DELETE FROM stock_movements");
+  await client.query("DELETE FROM product_splits");
   await client.query("DELETE FROM sale_items");
   await client.query("DELETE FROM sales");
   await client.query("ALTER TABLE sales ALTER COLUMN id RESTART WITH 1");

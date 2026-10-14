@@ -55,6 +55,18 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.locator("main form")).toHaveCount(0);
   });
 
+  test("administrador encontra somente produtos habilitados para abrir", async ({ page }) => {
+    await login(page, adminEmail, seedPassword);
+    await page.goto("/admin/stock");
+    await expect(page.getByRole("heading", { name: "Abrir box em boosters" })).toBeVisible();
+    const source = page.getByLabel("Produto para abrir");
+    await expect(source.locator("option", { hasText: "Magic Foundations — Play Booster Box" })).toHaveCount(1);
+    await expect(source.locator("option", { hasText: "Magic Foundations — Play Booster ·" })).toHaveCount(0);
+    await expect(page.getByLabel("Quantidade de boosters")).toBeVisible();
+    await expect(page.getByLabel("Venda unitária (R$)")).toBeVisible();
+    await expect(page.getByLabel("Nome do booster avulso")).toBeVisible();
+  });
+
   test("operador realiza a venda de Coca-Cola com PIX", async ({ page }) => {
     await login(page, operatorEmail, operatorPassword);
     const searchResponse = page.waitForResponse((response) => response.url().includes("/api/pos/products?q="));
