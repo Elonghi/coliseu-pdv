@@ -73,6 +73,16 @@ docker compose run --rm migrate npm run db:seed
 
 O PostgreSQL e as fotos usam volumes persistentes. Mantenha backup dos volumes `postgres_data` e `product_storage`, publique a aplicação atrás de HTTPS e não exponha a porta do banco fora de uma rede confiável.
 
+Para reiniciar excepcionalmente todos os dados operacionais em produção, use o terminal do container da aplicação. O comando exclui produtos e suas fotos, mapeamentos de fornecedores, vendas, pagamentos, movimentações de estoque, contas financeiras, movimentos e saldos de crédito dos jogadores e notas/documentos fiscais. Usuários, sessões, categorias, unidades, formas de pagamento, jogadores, auditoria, configuração SEFAZ e o último NSU são preservados.
+
+Esta operação é irreversível. Faça backup do PostgreSQL e do volume de fotos antes de executá-la. No terminal do container `app`, rode diretamente o script (a imagem standalone não expõe os scripts do npm):
+
+```bash
+CONFIRM_PRODUCTION_RESET=ZERAR_DADOS_OPERACIONAIS node /app/scripts/reset-import-data.mjs
+```
+
+Em um checkout local, o equivalente é `CONFIRM_PRODUCTION_RESET=ZERAR_DADOS_OPERACIONAIS npm run db:reset-operational-data`.
+
 ### Coolify
 
 Para produção no Coolify, use `docker-compose.coolify.yml` e siga o checklist completo em [DEPLOY_COOLIFY.md](./DEPLOY_COOLIFY.md). O Compose de produção não publica o banco, executa migrations antes da aplicação, possui health check e oferece bootstrap controlado do seed inicial.

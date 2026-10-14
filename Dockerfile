@@ -12,6 +12,7 @@ RUN npm run build
 FROM deps AS migrate
 COPY src ./src
 COPY drizzle ./drizzle
+COPY scripts ./scripts
 COPY drizzle.config.ts tsconfig.json ./
 CMD ["npm","run","db:migrate"]
 
@@ -27,6 +28,7 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/reset-import-data.mjs ./scripts/reset-import-data.mjs
 RUN mkdir -p /app/storage && chown nextjs:nodejs /app/storage
 USER nextjs
 EXPOSE 3000
