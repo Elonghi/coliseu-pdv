@@ -4,8 +4,7 @@ Sistema de frente de caixa e gestão para uma loja, com múltiplos operadores, e
 
 ## Funcionalidades
 
-- Contas a pagar e receber com parcelas por prazos em dias (`30/60/90`), vencimentos, liquidações parciais e histórico.
-- Registro de forma, data e pessoa relacionada a cada pagamento ou recebimento.
+- Contas a pagar e receber geradas automaticamente pelas operações, com parcelas, vencimentos e histórico em modo somente leitura.
 - Cadastro de jogadores e extrato imutável de créditos, aceitando saldo positivo ou negativo.
 - Crédito do jogador e pagamento futuro no PDV, inclusive combinados com PIX, dinheiro ou cartões.
 - Pagamento futuro gera automaticamente conta a receber e aparece no fluxo financeiro.
@@ -13,6 +12,7 @@ Sistema de frente de caixa e gestão para uma loja, com múltiplos operadores, e
 - Distribuição automática de NF-e destinadas ao CNPJ por NSU, usando certificado A1 e o Web Service oficial `NFeDistribuicaoDFe`.
 - Armazenamento do XML oficial, normalização de cabeçalho/itens/eventos e consulta no painel administrativo.
 - Importação retroativa de até 100 XMLs de NF-e por lote, com validação do CNPJ, deduplicação e histórico por arquivo.
+- Entrada automática no estoque dos itens de NF-e autorizadas destinadas à loja, incluindo custo médio, quantidade, vínculo por EAN/código do fornecedor e estorno seguro em cancelamentos.
 
 ## Desenvolvimento
 
@@ -58,6 +58,8 @@ npm run sefaz:sync
 O serviço `sefaz-worker` executa a sincronização automática e respeita o intervalo mínimo de 60 minutos quando não há novos documentos. A tela fica em `/admin/fiscal`.
 
 Na mesma tela, administradores podem importar notas antigas selecionando vários arquivos `.xml`. Cada arquivo pode ter até 5 MB e o lote até 50 MB. A importação aceita NF-e completa (`NFe`/`nfeProc`) pertencente ao CNPJ configurado, preserva o XML original e não altera o último NSU da integração.
+
+Notas completas, autorizadas e destinadas ao CNPJ da loja geram automaticamente as entradas de estoque e as contas a pagar das duplicatas. O produto é localizado pelo mapeamento do fornecedor, EAN, SKU ou nome exato. Quando não existe, é criado inativo com o custo fiscal e deve ter preço/cadastro revisados antes da ativação no PDV. A chave única por item fiscal torna a operação idempotente; reimportar o mesmo XML não soma estoque novamente.
 
 ## Produção com Docker
 

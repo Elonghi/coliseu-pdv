@@ -95,6 +95,10 @@ export type NormalizedItem = {
   quantity?: string;
   unitValueCents?: number;
   totalCents?: number;
+  discountCents?: number;
+  freightCents?: number;
+  insuranceCents?: number;
+  otherCents?: number;
   taxes?: XmlObject;
 };
 
@@ -201,6 +205,10 @@ function normalizeInvoice(root: XmlObject): NormalizedDfe {
       quantity: string(product.qCom),
       unitValueCents: decimalToCents(product.vUnCom),
       totalCents: decimalToCents(product.vProd),
+      discountCents: decimalToCents(product.vDesc),
+      freightCents: decimalToCents(product.vFrete),
+      insuranceCents: decimalToCents(product.vSeg),
+      otherCents: decimalToCents(product.vOutro),
       taxes: object(detail.imposto),
     } satisfies NormalizedItem;
   });

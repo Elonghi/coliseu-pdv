@@ -6,6 +6,7 @@ import { distributeDfe } from "./client";
 import { getFiscalIdentityConfig, getSefazConfig, type FiscalIdentityConfig, type SefazConfig } from "./config";
 import { manifestationLabel, normalizeDfeXml, type NormalizedDfe } from "./xml";
 import { cancelFiscalPayable, createPayableFromFiscalInvoice } from "@/modules/finance/service";
+import { cancelFiscalInvoiceStock, importFiscalInvoiceToStock } from "./stock";
 
 type SyncState = { id: string; last_nsu: string; max_nsu: string; next_sync_at: Date };
 export type SefazSyncResult = { status: "completed" | "deferred" | "running"; documents: number; batches: number; lastNsu?: string; maxNsu?: string; message: string };
@@ -35,10 +36,10 @@ async function persistInvoice(client: PoolClient, stateId: string, sourceDocumen
     RETURNING id`, [stateId, sourceDocumentId, invoice.accessKey, invoice.hasFullXml, invoice.status, invoice.issuerCnpjCpf ?? null, invoice.issuerName ?? null, invoice.issuerStateRegistration ?? null, invoice.recipientCnpjCpf ?? null, invoice.recipientName ?? null, invoice.recipientStateRegistration ?? null, invoice.issueAt ?? null, invoice.authorizationAt ?? null, invoice.operationType ?? null, invoice.model ?? null, invoice.series ?? null, invoice.number ?? null, invoice.operationNature ?? null, invoice.totalCents ?? null, invoice.protocol ?? null, invoice.xmlVersion ?? null]);
   const invoiceId = result.rows[0].id;
   if (invoice.hasFullXml) {
-    await client.query("DELETE FROM fiscal_invoice_items WHERE invoice_id=$1", [invoiceId]);
     for (const item of normalized.items) {
-      await client.query(`INSERT INTO fiscal_invoice_items (invoice_id,item_number,product_code,ean,description,ncm,cfop,unit,quantity,unit_value_cents,total_cents,taxes)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [invoiceId, item.itemNumber, item.productCode ?? null, item.ean ?? null, item.description, item.ncm ?? null, item.cfop ?? null, item.unit ?? null, item.quantity ?? null, item.unitValueCents ?? null, item.totalCents ?? null, item.taxes ? JSON.stringify(item.taxes) : null]);
+      await client.query(`INSERT INTO fiscal_invoice_items (invoice_id,item_number,product_code,ean,description,ncm,cfop,unit,quantity,unit_value_cents,total_cents,discount_cents,freight_cents,insurance_cents,other_cents,taxes)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        ON CONFLICT (invoice_id,item_number) DO UPDATE SET product_code=excluded.product_code,ean=excluded.ean,description=excluded.description,ncm=excluded.ncm,cfop=excluded.cfop,unit=excluded.unit,quantity=excluded.quantity,unit_value_cents=excluded.unit_value_cents,total_cents=excluded.total_cents,discount_cents=excluded.discount_cents,freight_cents=excluded.freight_cents,insurance_cents=excluded.insurance_cents,other_cents=excluded.other_cents,taxes=excluded.taxes`, [invoiceId, item.itemNumber, item.productCode ?? null, item.ean ?? null, item.description, item.ncm ?? null, item.cfop ?? null, item.unit ?? null, item.quantity ?? null, item.unitValueCents ?? null, item.totalCents ?? null, item.discountCents ?? null, item.freightCents ?? null, item.insuranceCents ?? null, item.otherCents ?? null, item.taxes ? JSON.stringify(item.taxes) : null]);
     }
   }
   await client.query("UPDATE fiscal_invoice_events SET invoice_id=$1 WHERE access_key=$2 AND invoice_id IS NULL", [invoiceId, invoice.accessKey]);
@@ -53,24 +54,28 @@ async function persistInvoice(client: PoolClient, stateId: string, sourceDocumen
   const current = await client.query<{ status: string }>("SELECT status FROM fiscal_invoices WHERE id=$1", [invoiceId]);
   if (current.rows[0]?.status === "CANCELED") {
     await cancelFiscalPayable(client, invoiceId);
-  } else if (invoice.hasFullXml && current.rows[0]?.status === "AUTHORIZED" && normalizeDocument(invoice.recipientCnpjCpf) === normalizeDocument(companyCnpj) && normalized.billing?.duplicates.length) {
-    await createPayableFromFiscalInvoice(client, {
-      fiscalInvoiceId: invoiceId,
-      actorId,
-      accessKey: invoice.accessKey,
-      number: invoice.number,
-      series: invoice.series,
-      issuerName: invoice.issuerName,
-      issuerDocument: invoice.issuerCnpjCpf,
-      issueAt: invoice.issueAt,
-      billingNumber: normalized.billing.invoiceNumber,
-      duplicates: normalized.billing.duplicates,
-    });
+    await cancelFiscalInvoiceStock(client, invoiceId, actorId);
+  } else if (invoice.hasFullXml && current.rows[0]?.status === "AUTHORIZED" && normalizeDocument(invoice.recipientCnpjCpf) === normalizeDocument(companyCnpj)) {
+    await importFiscalInvoiceToStock(client, { invoiceId, actorId, accessKey: invoice.accessKey, number: invoice.number, issuerName: invoice.issuerName, issuerDocument: invoice.issuerCnpjCpf });
+    if (normalized.billing?.duplicates.length) {
+      await createPayableFromFiscalInvoice(client, {
+        fiscalInvoiceId: invoiceId,
+        actorId,
+        accessKey: invoice.accessKey,
+        number: invoice.number,
+        series: invoice.series,
+        issuerName: invoice.issuerName,
+        issuerDocument: invoice.issuerCnpjCpf,
+        issueAt: invoice.issueAt,
+        billingNumber: normalized.billing.invoiceNumber,
+        duplicates: normalized.billing.duplicates,
+      });
+    }
   }
   return invoiceId;
 }
 
-async function persistEvent(client: PoolClient, stateId: string, sourceDocumentId: string, normalized: NormalizedDfe) {
+async function persistEvent(client: PoolClient, stateId: string, sourceDocumentId: string, normalized: NormalizedDfe, actorId?: string) {
   const event = normalized.event;
   if (!event) return;
   const invoice = event.accessKey ? await client.query<{ id: string }>("SELECT id FROM fiscal_invoices WHERE sync_state_id=$1 AND access_key=$2 LIMIT 1", [stateId, event.accessKey]) : null;
@@ -82,6 +87,7 @@ async function persistEvent(client: PoolClient, stateId: string, sourceDocumentI
   if (event.eventType === "110111") {
     await client.query("UPDATE fiscal_invoices SET status='CANCELED',updated_at=now() WHERE id=$1", [invoiceId]);
     await cancelFiscalPayable(client, invoiceId);
+    await cancelFiscalInvoiceStock(client, invoiceId, actorId);
   }
   const manifestation = manifestationLabel(event.eventType);
   if (manifestation) await client.query("UPDATE fiscal_invoices SET manifestation_status=$1,updated_at=now() WHERE id=$2", [manifestation, invoiceId]);
@@ -93,7 +99,7 @@ async function persistDocument(client: PoolClient, stateId: string, document: { 
     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (sync_state_id,nsu) DO UPDATE SET schema=excluded.schema,kind=excluded.kind,access_key=excluded.access_key,raw_xml=excluded.raw_xml,parsed=excluded.parsed,received_at=now()
     RETURNING id`, [stateId, document.nsu, document.schema, normalized.kind, normalized.accessKey ?? null, document.xml, JSON.stringify(normalized.parsed)]);
   await persistInvoice(client, stateId, source.rows[0].id, normalized, companyCnpj, actorId);
-  await persistEvent(client, stateId, source.rows[0].id, normalized);
+  await persistEvent(client, stateId, source.rows[0].id, normalized, actorId);
 }
 
 export type FiscalXmlImportResult = {

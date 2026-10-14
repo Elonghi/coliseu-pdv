@@ -3,7 +3,7 @@ import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, p
 
 export const userRole = pgEnum("user_role", ["ADMIN", "OPERATOR"]);
 export const saleStatus = pgEnum("sale_status", ["CONFIRMED", "CANCELED"]);
-export const stockMovementType = pgEnum("stock_movement_type", ["INITIAL", "MANUAL_IN", "MANUAL_ADJUSTMENT", "SALE", "SALE_CANCELLATION", "RETURN"]);
+export const stockMovementType = pgEnum("stock_movement_type", ["INITIAL", "MANUAL_IN", "MANUAL_ADJUSTMENT", "SALE", "SALE_CANCELLATION", "RETURN", "FISCAL_ENTRY", "FISCAL_CANCELLATION"]);
 export const financialAccountType = pgEnum("financial_account_type", ["PAYABLE", "RECEIVABLE"]);
 export const financialStatus = pgEnum("financial_status", ["OPEN", "PARTIAL", "SETTLED", "CANCELED"]);
 export const playerCreditMovementType = pgEnum("player_credit_movement_type", ["MANUAL", "SALE_CREDIT", "FUTURE_CHARGE", "FUTURE_PAYMENT", "SALE_REVERSAL"]);
@@ -59,6 +59,17 @@ export const products = pgTable("products", {
   check("products_discount_valid", sql`${t.maxDiscountBps} BETWEEN 0 AND 10000`),
   check("products_stock_nonnegative", sql`${t.stockQuantity} >= 0 AND ${t.minimumStock} >= 0`),
   index("products_name_idx").on(t.name), index("products_active_idx").on(t.active), index("products_category_idx").on(t.categoryId),
+]);
+
+export const supplierProductMappings = pgTable("supplier_product_mappings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  supplierDocument: varchar("supplier_document", { length: 14 }).notNull(),
+  supplierProductCode: varchar("supplier_product_code", { length: 180 }).notNull(),
+  productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
+  ...timestamps,
+}, (t) => [
+  uniqueIndex("supplier_product_mappings_supplier_code_uidx").on(t.supplierDocument, t.supplierProductCode),
+  index("supplier_product_mappings_product_idx").on(t.productId),
 ]);
 
 export const players = pgTable("players", {
@@ -159,9 +170,9 @@ export const playerCreditMovements = pgTable("player_credit_movements", {
 export const stockMovements = pgTable("stock_movements", {
   id: uuid("id").defaultRandom().primaryKey(), productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
   type: stockMovementType("type").notNull(), quantityDelta: integer("quantity_delta").notNull(), previousQuantity: integer("previous_quantity").notNull(), newQuantity: integer("new_quantity").notNull(),
-  saleId: integer("sale_id").references(() => sales.id, { onDelete: "restrict" }), userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "restrict" }), notes: text("notes"),
+  saleId: integer("sale_id").references(() => sales.id, { onDelete: "restrict" }), fiscalInvoiceItemId: uuid("fiscal_invoice_item_id").references((): AnyPgColumn => fiscalInvoiceItems.id, { onDelete: "restrict" }), userId: uuid("user_id").references(() => users.id, { onDelete: "restrict" }), notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [index("stock_movements_product_date_idx").on(t.productId, t.createdAt), index("stock_movements_sale_idx").on(t.saleId)]);
+}, (t) => [index("stock_movements_product_date_idx").on(t.productId, t.createdAt), index("stock_movements_sale_idx").on(t.saleId), index("stock_movements_fiscal_item_idx").on(t.fiscalInvoiceItemId), uniqueIndex("stock_movements_fiscal_item_type_uidx").on(t.fiscalInvoiceItemId, t.type)]);
 
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(), userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
@@ -274,11 +285,21 @@ export const fiscalInvoiceItems = pgTable("fiscal_invoice_items", {
   quantity: numeric("quantity", { precision: 18, scale: 4 }),
   unitValueCents: bigint("unit_value_cents", { mode: "number" }),
   totalCents: bigint("total_cents", { mode: "number" }),
+  discountCents: bigint("discount_cents", { mode: "number" }),
+  freightCents: bigint("freight_cents", { mode: "number" }),
+  insuranceCents: bigint("insurance_cents", { mode: "number" }),
+  otherCents: bigint("other_cents", { mode: "number" }),
+  productId: uuid("product_id").references(() => products.id, { onDelete: "restrict" }),
+  stockUnitCostCents: integer("stock_unit_cost_cents"),
+  stockImportedAt: timestamp("stock_imported_at", { withTimezone: true }),
+  stockReversedAt: timestamp("stock_reversed_at", { withTimezone: true }),
+  stockImportError: text("stock_import_error"),
   taxes: jsonb("taxes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("fiscal_invoice_items_invoice_number_uidx").on(t.invoiceId, t.itemNumber),
   index("fiscal_invoice_items_invoice_idx").on(t.invoiceId),
+  index("fiscal_invoice_items_product_idx").on(t.productId),
 ]);
 
 export const fiscalInvoiceEvents = pgTable("fiscal_invoice_events", {
