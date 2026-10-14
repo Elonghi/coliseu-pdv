@@ -36,15 +36,21 @@ test.describe.serial("fluxos essenciais", () => {
     await login(page, adminEmail, seedPassword);
     await page.goto("/admin/fiscal");
     await expect(page.getByRole("heading", { name: "Notas fiscais recebidas" })).toBeVisible();
+    await expect(page.getByLabel("Empresa emitente")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sincronizar agora" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Importar XMLs" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Documentos" })).toBeVisible();
+    await page.getByRole("link", { name: "Importação e SEFAZ" }).first().click();
+    await expect(page.getByRole("heading", { name: "Importação e SEFAZ" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sincronizar agora" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Importar XMLs" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Documentos" })).toBeVisible();
   });
 
   test("financeiro é somente leitura e alimentado automaticamente", async ({ page }) => {
     await login(page, adminEmail, seedPassword);
     await page.goto("/admin/finance");
     await expect(page.getByRole("heading", { name: "Contas a pagar e receber" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Duplicatas por fornecedor" })).toBeVisible();
     await expect(page.getByText("Contas e liquidações geradas automaticamente pelas operações do sistema.")).toBeVisible();
     await expect(page.locator("main form")).toHaveCount(0);
   });
