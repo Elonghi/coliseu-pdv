@@ -57,6 +57,13 @@
       "when": 1791997873170,
       "tag": "0007_handy_madame_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791998905880,
+      "tag": "0008_expand_splittable_products",
+      "breakpoints": true
     }
   ]
 }

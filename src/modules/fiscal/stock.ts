@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
+import { isSplittableSealedProduct } from "@/modules/catalog/classification";
 
 type FiscalStockInput = {
   invoiceId: string;
@@ -63,15 +64,17 @@ async function resolveProduct(client: PoolClient, item: FiscalItemRow, input: Fi
     const hash = createHash("sha256").update(`${supplierDocument}:${supplierCode}`).digest("hex").slice(0, 16).toUpperCase();
     const sku = `NFE-${hash}`;
     const description = [`Importado automaticamente da NF-e.`, input.issuerName ? `Fornecedor: ${input.issuerName}.` : null, item.product_code ? `Código do fornecedor: ${item.product_code}.` : null, item.ncm ? `NCM: ${item.ncm}.` : null, item.cfop ? `CFOP: ${item.cfop}.` : null].filter(Boolean).join(" ");
+    const canSplitIntoBoosters = isSplittableSealedProduct(item.description);
     const inserted = await client.query<{ id: string }>(`INSERT INTO products
-      (sku,barcode,name,description,category_id,unit_id,cost_cents,sale_price_cents,max_discount_bps,stock_quantity,minimum_stock,active)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$7,0,0,0,false) ON CONFLICT (sku) DO NOTHING RETURNING id`, [sku, ean ?? null, item.description.slice(0, 180), description, categoryId, unitId, unitCostCents]);
+      (sku,barcode,name,description,category_id,unit_id,cost_cents,sale_price_cents,max_discount_bps,stock_quantity,minimum_stock,can_split_into_boosters,active)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$7,0,0,0,$8,false) ON CONFLICT (sku) DO NOTHING RETURNING id`, [sku, ean ?? null, item.description.slice(0, 180), description, categoryId, unitId, unitCostCents, canSplitIntoBoosters]);
     productId = inserted.rows[0]?.id;
     created = Boolean(productId);
     if (!productId) productId = (await client.query<{ id: string }>("SELECT id FROM products WHERE sku=$1", [sku])).rows[0]?.id;
     if (!productId) throw new Error("Não foi possível criar ou localizar o produto do item fiscal.");
     if (created) await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'FISCAL_PRODUCT_CREATE','product',$2,$3)", [input.actorId ?? null, productId, JSON.stringify({ invoiceId: input.invoiceId, accessKey: input.accessKey, supplierCode, ean, inactive: true })]);
   }
+  if (isSplittableSealedProduct(item.description)) await client.query("UPDATE products SET can_split_into_boosters=true,updated_at=now() WHERE id=$1 AND is_loose_booster=false", [productId]);
   await client.query(`INSERT INTO supplier_product_mappings (supplier_document,supplier_product_code,product_id)
     VALUES ($1,$2,$3) ON CONFLICT (supplier_document,supplier_product_code) DO NOTHING`, [supplierDocument, supplierCode, productId]);
   const definitive = await client.query<{ product_id: string }>("SELECT product_id FROM supplier_product_mappings WHERE supplier_document=$1 AND supplier_product_code=$2", [supplierDocument, supplierCode]);

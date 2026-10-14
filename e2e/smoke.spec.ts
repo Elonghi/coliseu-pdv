@@ -61,6 +61,8 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.getByRole("heading", { name: "Abrir box em boosters" })).toBeVisible();
     const source = page.getByLabel("Produto para abrir");
     await expect(source.locator("option", { hasText: "Magic Foundations — Play Booster Box" })).toHaveCount(1);
+    await expect(source.locator("option", { hasText: "Pokémon TCG — Triple Pack Blister" })).toHaveCount(1);
+    await expect(source.locator("option", { hasText: "Pokémon Surging Sparks — Elite Trainer Box" })).toHaveCount(1);
     await expect(source.locator("option", { hasText: "Magic Foundations — Play Booster ·" })).toHaveCount(0);
     await expect(page.getByLabel("Quantidade de boosters")).toBeVisible();
     await expect(page.getByLabel("Venda unitária (R$)")).toBeVisible();
