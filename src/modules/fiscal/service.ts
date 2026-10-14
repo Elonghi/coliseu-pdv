@@ -105,7 +105,11 @@ export async function syncSefazDfe(actorId?: string, options: SyncOptions = {}):
       lastMessage = response.statusMessage;
       if (!["137", "138"].includes(response.statusCode)) {
         const delay = response.statusCode === "656" ? "65 minutes" : "15 minutes";
-        await client.query("UPDATE sefaz_sync_states SET last_status_code=$1,last_status_message=$2,last_error=$2,last_synced_at=now(),next_sync_at=now()+$3::interval,updated_at=now() WHERE id=$4", [response.statusCode, response.statusMessage, delay, state.id]);
+        await client.query(`UPDATE sefaz_sync_states SET
+          last_nsu=CASE WHEN $1='656' AND $5::text <> '000000000000000' THEN $5 ELSE last_nsu END,
+          max_nsu=CASE WHEN $1='656' AND $6::text <> '000000000000000' THEN $6 ELSE max_nsu END,
+          last_status_code=$1,last_status_message=$2,last_error=$2,last_synced_at=now(),next_sync_at=now()+$3::interval,updated_at=now()
+          WHERE id=$4`, [response.statusCode, response.statusMessage, delay, state.id, response.lastNsu, response.maxNsu]);
         throw new AppError(`SEFAZ ${response.statusCode}: ${response.statusMessage}`, 502, `SEFAZ_${response.statusCode}`);
       }
       await client.query("BEGIN");
