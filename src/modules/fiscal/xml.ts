@@ -1,4 +1,4 @@
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 
 type XmlValue = string | number | boolean | null | XmlObject | XmlValue[];
 interface XmlObject { [key: string]: XmlValue }
@@ -35,6 +35,8 @@ export function decimalToCents(value: XmlValue | undefined) {
 
 export function parseXml(xml: string): XmlObject {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error("XML com DTD ou entidades externas não é aceito.");
+  const validation = XMLValidator.validate(xml);
+  if (validation !== true) throw new Error(`XML inválido: ${validation.err.msg}.`);
   const parsed = parser.parse(xml) as XmlObject;
   if (!parsed || typeof parsed !== "object") throw new Error("XML da SEFAZ inválido.");
   return parsed;

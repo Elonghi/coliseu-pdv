@@ -1,15 +1,16 @@
+import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
 import { distributeDfe } from "./client";
-import { getSefazConfig, type SefazConfig } from "./config";
+import { getFiscalIdentityConfig, getSefazConfig, type FiscalIdentityConfig, type SefazConfig } from "./config";
 import { manifestationLabel, normalizeDfeXml, type NormalizedDfe } from "./xml";
 
 type SyncState = { id: string; last_nsu: string; max_nsu: string; next_sync_at: Date };
 export type SefazSyncResult = { status: "completed" | "deferred" | "running"; documents: number; batches: number; lastNsu?: string; maxNsu?: string; message: string };
 type SyncOptions = { config?: SefazConfig; distribute?: typeof distributeDfe };
 
-async function ensureSyncState(client: PoolClient, config: SefazConfig) {
+async function ensureSyncState(client: PoolClient, config: FiscalIdentityConfig) {
   return (await client.query<SyncState>(`INSERT INTO sefaz_sync_states (company_cnpj,environment,uf_code)
     VALUES ($1,$2,$3) ON CONFLICT (company_cnpj,environment) DO UPDATE SET uf_code=excluded.uf_code,updated_at=now()
     RETURNING id,last_nsu,max_nsu,next_sync_at`, [config.cnpj, config.environment, config.ufCode])).rows[0];
@@ -72,6 +73,92 @@ async function persistDocument(client: PoolClient, stateId: string, document: { 
     RETURNING id`, [stateId, document.nsu, document.schema, normalized.kind, normalized.accessKey ?? null, document.xml, JSON.stringify(normalized.parsed)]);
   await persistInvoice(client, stateId, source.rows[0].id, normalized);
   await persistEvent(client, stateId, source.rows[0].id, normalized);
+}
+
+export type FiscalXmlImportResult = {
+  fileName: string;
+  status: "IMPORTED" | "DUPLICATE" | "FAILED";
+  accessKey?: string;
+  message: string;
+};
+
+export type FiscalXmlImportBatchResult = {
+  batchId: string;
+  fileCount: number;
+  importedCount: number;
+  duplicateCount: number;
+  failedCount: number;
+  results: FiscalXmlImportResult[];
+};
+
+const normalizeDocument = (value?: string) => value?.toUpperCase().replace(/[^A-Z0-9]/g, "");
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : "Não foi possível importar o XML.";
+
+export async function importFiscalXmlBatch(
+  files: { name: string; xml: string }[],
+  actorId?: string,
+  identity: FiscalIdentityConfig = getFiscalIdentityConfig(),
+): Promise<FiscalXmlImportBatchResult> {
+  if (!files.length || files.length > 100) throw new AppError("Selecione de 1 a 100 arquivos XML.", 422, "FISCAL_IMPORT_FILE_COUNT");
+  const client = await pool.connect();
+  try {
+    const state = await ensureSyncState(client, identity);
+    const batch = await client.query<{ id: string }>(`INSERT INTO fiscal_import_batches (sync_state_id,imported_by_id,file_count)
+      VALUES ($1,$2,$3) RETURNING id`, [state.id, actorId ?? null, files.length]);
+    const batchId = batch.rows[0].id;
+    const results: FiscalXmlImportResult[] = [];
+
+    for (const file of files) {
+      const fileName = (file.name.trim() || "nota.xml").slice(0, 255);
+      let transactionOpen = false;
+      try {
+        const xml = file.xml.replace(/^\uFEFF/, "").trim();
+        if (!xml) throw new AppError("O arquivo está vazio.", 422, "FISCAL_IMPORT_EMPTY");
+        const normalized = normalizeDfeXml(xml);
+        if (normalized.kind !== "NFE" || !normalized.invoice?.hasFullXml) throw new AppError("O arquivo não contém uma NF-e completa (NFe/nfeProc).", 422, "FISCAL_IMPORT_NOT_NFE");
+        const invoice = normalized.invoice;
+        if (!/^\d{44}$/.test(invoice.accessKey)) throw new AppError("A chave de acesso da NF-e é inválida.", 422, "FISCAL_IMPORT_ACCESS_KEY");
+        const parties = [normalizeDocument(invoice.issuerCnpjCpf), normalizeDocument(invoice.recipientCnpjCpf)];
+        if (!parties.includes(identity.cnpj)) throw new AppError("A NF-e não pertence ao CNPJ configurado no sistema.", 422, "FISCAL_IMPORT_CNPJ");
+        const contentHash = createHash("sha256").update(xml).digest("hex");
+
+        await client.query("BEGIN");
+        transactionOpen = true;
+        const existing = await client.query<{ has_full_xml: boolean }>("SELECT has_full_xml FROM fiscal_invoices WHERE sync_state_id=$1 AND access_key=$2 FOR UPDATE", [state.id, invoice.accessKey]);
+        if (existing.rows[0]?.has_full_xml) {
+          await client.query("COMMIT");
+          transactionOpen = false;
+          results.push({ fileName, status: "DUPLICATE", accessKey: invoice.accessKey, message: "Esta NF-e completa já estava cadastrada." });
+          continue;
+        }
+        const source = await client.query<{ id: string }>(`INSERT INTO fiscal_dfe_documents
+          (sync_state_id,import_batch_id,nsu,schema,kind,access_key,original_file_name,content_hash,raw_xml,parsed)
+          VALUES ($1,$2,NULL,$3,'NFE',$4,$5,$6,$7,$8) RETURNING id`, [state.id, batchId, `procNFe_v${invoice.xmlVersion ?? "4.00"}.xsd`, invoice.accessKey, fileName, contentHash, xml, JSON.stringify(normalized.parsed)]);
+        await persistInvoice(client, state.id, source.rows[0].id, normalized);
+        await client.query("COMMIT");
+        transactionOpen = false;
+        results.push({ fileName, status: "IMPORTED", accessKey: invoice.accessKey, message: "NF-e importada com sucesso." });
+      } catch (error) {
+        if (transactionOpen) await client.query("ROLLBACK").catch(() => undefined);
+        const databaseError = error as { code?: string; constraint?: string };
+        if (databaseError.code === "23505" && databaseError.constraint === "fiscal_dfe_documents_state_hash_uidx") {
+          results.push({ fileName, status: "DUPLICATE", message: "Este arquivo XML já havia sido importado." });
+        } else {
+          results.push({ fileName, status: "FAILED", message: errorMessage(error).slice(0, 500) });
+        }
+      }
+    }
+
+    const importedCount = results.filter((result) => result.status === "IMPORTED").length;
+    const duplicateCount = results.filter((result) => result.status === "DUPLICATE").length;
+    const failedCount = results.filter((result) => result.status === "FAILED").length;
+    await client.query(`UPDATE fiscal_import_batches SET imported_count=$1,duplicate_count=$2,failed_count=$3,results=$4,completed_at=now() WHERE id=$5`,
+      [importedCount, duplicateCount, failedCount, JSON.stringify(results), batchId]);
+    if (actorId) await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'FISCAL_XML_IMPORT','fiscal_import_batch',$2,$3)", [actorId, batchId, JSON.stringify({ fileCount: files.length, importedCount, duplicateCount, failedCount })]);
+    return { batchId, fileCount: files.length, importedCount, duplicateCount, failedCount, results };
+  } finally {
+    client.release();
+  }
 }
 
 async function saveFailure(client: PoolClient, stateId: string | undefined, error: unknown) {

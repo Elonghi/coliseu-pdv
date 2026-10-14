@@ -12,6 +12,7 @@ Sistema de frente de caixa e gestão para uma loja, com múltiplos operadores, e
 - Dashboard separa faturamento de vendas do fluxo de caixa realizado, evitando dupla contagem.
 - Distribuição automática de NF-e destinadas ao CNPJ por NSU, usando certificado A1 e o Web Service oficial `NFeDistribuicaoDFe`.
 - Armazenamento do XML oficial, normalização de cabeçalho/itens/eventos e consulta no painel administrativo.
+- Importação retroativa de até 100 XMLs de NF-e por lote, com validação do CNPJ, deduplicação e histórico por arquivo.
 
 ## Desenvolvimento
 
@@ -55,6 +56,8 @@ npm run sefaz:sync
 ```
 
 O serviço `sefaz-worker` executa a sincronização automática e respeita o intervalo mínimo de 60 minutos quando não há novos documentos. A tela fica em `/admin/fiscal`.
+
+Na mesma tela, administradores podem importar notas antigas selecionando vários arquivos `.xml`. Cada arquivo pode ter até 5 MB e o lote até 50 MB. A importação aceita NF-e completa (`NFe`/`nfeProc`) pertencente ao CNPJ configurado, preserva o XML original e não altera o último NSU da integração.
 
 ## Produção com Docker
 

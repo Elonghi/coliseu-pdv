@@ -37,6 +37,7 @@ test.describe.serial("fluxos essenciais", () => {
     await page.goto("/admin/fiscal");
     await expect(page.getByRole("heading", { name: "Notas fiscais recebidas" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sincronizar agora" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Importar XMLs" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Documentos" })).toBeVisible();
   });
 

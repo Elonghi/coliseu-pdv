@@ -186,22 +186,44 @@ export const sefazSyncStates = pgTable("sefaz_sync_states", {
   check("sefaz_sync_states_nsu_format", sql`${t.lastNsu} ~ '^[0-9]{15}$' AND ${t.maxNsu} ~ '^[0-9]{15}$'`),
 ]);
 
+export const fiscalImportBatches = pgTable("fiscal_import_batches", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  syncStateId: uuid("sync_state_id").notNull().references(() => sefazSyncStates.id, { onDelete: "restrict" }),
+  importedById: uuid("imported_by_id").references(() => users.id, { onDelete: "set null" }),
+  fileCount: integer("file_count").notNull(),
+  importedCount: integer("imported_count").default(0).notNull(),
+  duplicateCount: integer("duplicate_count").default(0).notNull(),
+  failedCount: integer("failed_count").default(0).notNull(),
+  results: jsonb("results"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  check("fiscal_import_batches_counts_valid", sql`${t.fileCount} > 0 AND ${t.importedCount} >= 0 AND ${t.duplicateCount} >= 0 AND ${t.failedCount} >= 0`),
+  index("fiscal_import_batches_created_idx").on(t.createdAt),
+  index("fiscal_import_batches_state_idx").on(t.syncStateId),
+]);
+
 export const fiscalDfeDocuments = pgTable("fiscal_dfe_documents", {
   id: uuid("id").defaultRandom().primaryKey(),
   syncStateId: uuid("sync_state_id").notNull().references(() => sefazSyncStates.id, { onDelete: "restrict" }),
-  nsu: varchar("nsu", { length: 15 }).notNull(),
+  importBatchId: uuid("import_batch_id").references(() => fiscalImportBatches.id, { onDelete: "restrict" }),
+  nsu: varchar("nsu", { length: 15 }),
   schema: varchar("schema", { length: 120 }).notNull(),
   kind: fiscalDocumentKind("kind").default("UNKNOWN").notNull(),
   accessKey: varchar("access_key", { length: 44 }),
+  originalFileName: varchar("original_file_name", { length: 255 }),
+  contentHash: varchar("content_hash", { length: 64 }),
   rawXml: text("raw_xml").notNull(),
   parsed: jsonb("parsed"),
   receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("fiscal_dfe_documents_state_nsu_uidx").on(t.syncStateId, t.nsu),
+  uniqueIndex("fiscal_dfe_documents_state_hash_uidx").on(t.syncStateId, t.contentHash).where(sql`${t.contentHash} IS NOT NULL`),
   index("fiscal_dfe_documents_access_key_idx").on(t.accessKey),
+  index("fiscal_dfe_documents_import_batch_idx").on(t.importBatchId),
   index("fiscal_dfe_documents_received_idx").on(t.receivedAt),
-  check("fiscal_dfe_documents_nsu_format", sql`${t.nsu} ~ '^[0-9]{15}$'`),
+  check("fiscal_dfe_documents_nsu_format", sql`${t.nsu} IS NULL OR ${t.nsu} ~ '^[0-9]{15}$'`),
 ]);
 
 export const fiscalInvoices = pgTable("fiscal_invoices", {

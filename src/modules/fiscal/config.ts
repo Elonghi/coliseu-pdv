@@ -15,12 +15,25 @@ const schema = z.object({
   maxBatches: z.number().int().min(1).max(100),
 });
 
+const identitySchema = schema.pick({ environment: true, cnpj: true, ufCode: true });
+
 export type SefazConfig = z.infer<typeof schema>;
+export type FiscalIdentityConfig = z.infer<typeof identitySchema>;
 
 const normalizeCnpj = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 export function isSefazEnabled() {
   return process.env.SEFAZ_ENABLED === "true";
+}
+
+export function getFiscalIdentityConfig(): FiscalIdentityConfig {
+  const parsed = identitySchema.safeParse({
+    environment: process.env.SEFAZ_ENVIRONMENT === "homologation" ? "HOMOLOGATION" : "PRODUCTION",
+    cnpj: normalizeCnpj(process.env.SEFAZ_CNPJ ?? ""),
+    ufCode: Number(process.env.SEFAZ_UF_CODE),
+  });
+  if (!parsed.success) throw new AppError("Configure SEFAZ_CNPJ e SEFAZ_UF_CODE antes de importar XMLs.", 503, "FISCAL_IDENTITY_INVALID");
+  return parsed.data;
 }
 
 export function getSefazConfig(): SefazConfig {
