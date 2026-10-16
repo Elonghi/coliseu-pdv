@@ -10,12 +10,12 @@ export async function loginAction(_: LoginState, formData: FormData): Promise<Lo
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const otp = String(formData.get("otp") ?? "").trim();
-  const result = await pool.query<{ id: string; password_hash: string;totp_enabled:boolean;totp_secret_encrypted:string|null }>("SELECT id,password_hash,totp_enabled,totp_secret_encrypted FROM users WHERE lower(email)=$1 AND active=true", [email]);
+  const result = await pool.query<{ id: string; role: "ADMIN" | "OPERATOR"; password_hash: string;totp_enabled:boolean;totp_secret_encrypted:string|null }>("SELECT id,role,password_hash,totp_enabled,totp_secret_encrypted FROM users WHERE lower(email)=$1 AND active=true", [email]);
   const user = result.rows[0];
   if (!user || !(await compare(password, user.password_hash))) return { error: "E-mail ou senha inválidos." };
   if(user.totp_enabled&&(!user.totp_secret_encrypted||!verifyTotp(decryptTotpSecret(user.totp_secret_encrypted),otp)))return{error:"Código de autenticação em duas etapas inválido."};
   await pool.query("DELETE FROM sessions WHERE expires_at<=now()");
   await createSession(user.id);
-  redirect("/");
+  redirect(user.role === "ADMIN" ? "/admin" : "/pdv");
 }
 export async function logoutAction() { await destroySession(); redirect("/login"); }
