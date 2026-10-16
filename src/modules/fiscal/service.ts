@@ -2,15 +2,15 @@ import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
-import { distributeDfe } from "./client";
+import { distributeDfe, queryDfeByAccessKey } from "./client";
 import { getFiscalIdentityConfig, getSefazConfig, type FiscalIdentityConfig, type SefazConfig } from "./config";
 import { manifestationLabel, normalizeDfeXml, type NormalizedDfe } from "./xml";
 import { cancelFiscalPayable, createPayableFromFiscalInvoice } from "@/modules/finance/service";
 import { cancelFiscalInvoiceStock, importFiscalInvoiceToStock } from "./stock";
 
 type SyncState = { id: string; last_nsu: string; max_nsu: string; next_sync_at: Date };
-export type SefazSyncResult = { status: "completed" | "deferred" | "running"; documents: number; batches: number; lastNsu?: string; maxNsu?: string; message: string };
-type SyncOptions = { config?: SefazConfig; distribute?: typeof distributeDfe };
+export type SefazSyncResult = { status: "completed" | "deferred" | "running"; documents: number; recovered: number; batches: number; lastNsu?: string; maxNsu?: string; message: string };
+type SyncOptions = { config?: SefazConfig; distribute?: typeof distributeDfe; queryByAccessKey?: typeof queryDfeByAccessKey };
 
 async function ensureSyncState(client: PoolClient, config: FiscalIdentityConfig) {
   return (await client.query<SyncState>(`INSERT INTO sefaz_sync_states (company_cnpj,environment,uf_code)
@@ -100,6 +100,39 @@ async function persistDocument(client: PoolClient, stateId: string, document: { 
     RETURNING id`, [stateId, document.nsu, document.schema, normalized.kind, normalized.accessKey ?? null, document.xml, JSON.stringify(normalized.parsed)]);
   await persistInvoice(client, stateId, source.rows[0].id, normalized, companyCnpj, actorId);
   await persistEvent(client, stateId, source.rows[0].id, normalized, actorId);
+}
+
+async function recoverSummaryXmls(
+  client: PoolClient,
+  stateId: string,
+  config: SefazConfig,
+  actorId: string | undefined,
+  queryByAccessKey: typeof queryDfeByAccessKey,
+) {
+  const candidates = await client.query<{ id: string; access_key: string }>(`SELECT id,access_key FROM fiscal_invoices
+    WHERE sync_state_id=$1 AND has_full_xml=false
+      AND (issue_at IS NULL OR issue_at >= now()-interval '90 days')
+    ORDER BY issue_at DESC NULLS LAST,created_at DESC LIMIT 20`, [stateId]);
+  let recovered = 0;
+  let documents = 0;
+  for (const candidate of candidates.rows) {
+    const response = await queryByAccessKey(config, candidate.access_key);
+    if (response.statusCode === "656") throw new AppError(`SEFAZ 656: ${response.statusMessage}`, 502, "SEFAZ_656");
+    if (response.statusCode === "137") continue;
+    if (response.statusCode !== "138") throw new AppError(`SEFAZ ${response.statusCode}: ${response.statusMessage}`, 502, `SEFAZ_${response.statusCode}`);
+    await client.query("BEGIN");
+    try {
+      for (const document of response.documents) await persistDocument(client, stateId, document, config.cnpj, actorId);
+      documents += response.documents.length;
+      const current = await client.query<{ has_full_xml: boolean }>("SELECT has_full_xml FROM fiscal_invoices WHERE id=$1", [candidate.id]);
+      if (current.rows[0]?.has_full_xml) recovered++;
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
+  }
+  return { recovered, documents, attempted: candidates.rowCount ?? 0 };
 }
 
 export type FiscalXmlImportResult = {
@@ -206,9 +239,9 @@ export async function syncSefazDfe(actorId?: string, options: SyncOptions = {}):
   const lockKey = `sefaz-dfe:${config.environment}:${config.cnpj}`;
   try {
     locked = (await client.query<{ acquired: boolean }>("SELECT pg_try_advisory_lock(hashtextextended($1,0)) acquired", [lockKey])).rows[0].acquired;
-    if (!locked) return { status: "running", documents: 0, batches: 0, message: "Já existe uma sincronização em andamento." };
+    if (!locked) return { status: "running", documents: 0, recovered: 0, batches: 0, message: "Já existe uma sincronização em andamento." };
     state = await ensureSyncState(client, config);
-    if (state.next_sync_at > new Date()) return { status: "deferred", documents: 0, batches: 0, lastNsu: state.last_nsu, maxNsu: state.max_nsu, message: `Próxima consulta permitida após ${state.next_sync_at.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.` };
+    if (state.next_sync_at > new Date()) return { status: "deferred", documents: 0, recovered: 0, batches: 0, lastNsu: state.last_nsu, maxNsu: state.max_nsu, message: `Próxima consulta permitida após ${state.next_sync_at.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.` };
     let lastNsu = state.last_nsu;
     let maxNsu = state.max_nsu;
     let documents = 0;
@@ -240,8 +273,11 @@ export async function syncSefazDfe(actorId?: string, options: SyncOptions = {}):
         if (completed) break;
       } catch (error) { await client.query("ROLLBACK"); throw error; }
     }
-    if (actorId) await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'SEFAZ_SYNC','sefaz_sync_state',$2,$3)", [actorId, state.id, JSON.stringify({ documents, batches, lastNsu, maxNsu })]);
-    return { status: "completed", documents, batches, lastNsu, maxNsu, message: lastMessage || "Sincronização concluída." };
+    const recovery = await recoverSummaryXmls(client, state.id, config, actorId, options.queryByAccessKey ?? queryDfeByAccessKey);
+    documents += recovery.documents;
+    if (actorId) await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'SEFAZ_SYNC','sefaz_sync_state',$2,$3)", [actorId, state.id, JSON.stringify({ documents, recovered: recovery.recovered, recoveryAttempts: recovery.attempted, batches, lastNsu, maxNsu })]);
+    const recoveryMessage = recovery.recovered ? ` ${recovery.recovered} resumo(s) atualizado(s) com o XML completo.` : "";
+    return { status: "completed", documents, recovered: recovery.recovered, batches, lastNsu, maxNsu, message: `${lastMessage || "Sincronização concluída."}${recoveryMessage}` };
   } catch (error) {
     await saveFailure(client, state?.id, error);
     throw error;

@@ -193,6 +193,6 @@ export async function sefazSyncAction(): Promise<ActionState> {
     const result = await syncSefazDfe(user.id);
     revalidatePath("/admin/fiscal");
     revalidatePath("/admin/fiscal/integration");
-    return { ok: result.status === "completed" ? `${result.documents} documento(s) recebido(s) em ${result.batches} lote(s).` : result.message };
+    return { ok: result.status === "completed" ? `${result.documents} documento(s) recebido(s) em ${result.batches} lote(s). ${result.recovered} resumo(s) recuperado(s) com itens.` : result.message };
   } catch (error) { return { error: message(error) }; }
 }

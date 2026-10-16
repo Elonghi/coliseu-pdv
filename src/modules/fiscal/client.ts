@@ -32,6 +32,26 @@ export function buildDistributionEnvelope(config: Pick<SefazConfig, "environment
 </soap12:Envelope>`;
 }
 
+export function buildAccessKeyEnvelope(config: Pick<SefazConfig, "environment" | "ufCode" | "cnpj">, accessKey: string) {
+  if (!/^\d{44}$/.test(accessKey)) throw new AppError("A chave de acesso da NF-e é inválida.", 422, "SEFAZ_INVALID_ACCESS_KEY");
+  const tpAmb = config.environment === "PRODUCTION" ? "1" : "2";
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+  <soap12:Body>
+    <nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
+      <nfeDadosMsg>
+        <distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
+          <tpAmb>${tpAmb}</tpAmb>
+          <cUFAutor>${config.ufCode}</cUFAutor>
+          <CNPJ>${escapeXml(config.cnpj)}</CNPJ>
+          <consChNFe><chNFe>${accessKey}</chNFe></consChNFe>
+        </distDFeInt>
+      </nfeDadosMsg>
+    </nfeDistDFeInteresse>
+  </soap12:Body>
+</soap12:Envelope>`;
+}
+
 async function soapRequest(config: SefazConfig, body: string) {
   const certificate = await loadA1Certificate(config);
   const url = new URL(config.endpoint);
@@ -99,4 +119,8 @@ export function parseDistributionResponse(responseXml: string): DistributionResp
 
 export async function distributeDfe(config: SefazConfig, lastNsu: string) {
   return parseDistributionResponse(await soapRequest(config, buildDistributionEnvelope(config, lastNsu)));
+}
+
+export async function queryDfeByAccessKey(config: SefazConfig, accessKey: string) {
+  return parseDistributionResponse(await soapRequest(config, buildAccessKeyEnvelope(config, accessKey)));
 }

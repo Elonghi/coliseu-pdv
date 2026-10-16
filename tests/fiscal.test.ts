@@ -1,6 +1,6 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { buildDistributionEnvelope, parseDistributionResponse } from "@/modules/fiscal/client";
+import { buildAccessKeyEnvelope, buildDistributionEnvelope, parseDistributionResponse } from "@/modules/fiscal/client";
 import { decimalToCents, normalizeDfeXml } from "@/modules/fiscal/xml";
 import { accessKey, eventSummaryXml, fullXml, summaryXml } from "./fixtures/fiscal";
 
@@ -12,4 +12,5 @@ describe("conversão de documentos fiscais brasileiros",()=>{
   it("rejeita duplicata sem vencimento válido",()=>{expect(()=>normalizeDfeXml(fullXml.replace("2026-11-13","13/11/2026"))).toThrow("Duplicata 1 sem data de vencimento válida")});
   it("rejeita XML malformado antes da normalização",()=>{expect(()=>normalizeDfeXml("<nfeProc><NFe></nfeProc>")).toThrow("XML inválido")});
   it("monta o pedido distNSU e descompacta a resposta SOAP",()=>{const envelope=buildDistributionEnvelope({environment:"HOMOLOGATION",ufCode:35,cnpj:"98765432000199"},"42");expect(envelope).toContain("<tpAmb>2</tpAmb>");expect(envelope).toContain("<ultNSU>000000000000042</ultNSU>");const zip=gzipSync(summaryXml).toString("base64");const response=`<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body><nfeDistDFeInteresseResponse><nfeDistDFeInteresseResult><retDistDFeInt versao="1.01"><tpAmb>2</tpAmb><verAplic>1</verAplic><cStat>138</cStat><xMotivo>Documento localizado</xMotivo><dhResp>2026-10-14T11:00:00-03:00</dhResp><ultNSU>000000000000043</ultNSU><maxNSU>000000000000043</maxNSU><loteDistDFeInt><docZip NSU="000000000000043" schema="resNFe_v1.01.xsd">${zip}</docZip></loteDistDFeInt></retDistDFeInt></nfeDistDFeInteresseResult></nfeDistDFeInteresseResponse></soap:Body></soap:Envelope>`;const parsed=parseDistributionResponse(response);expect(parsed.documents[0]).toEqual({nsu:"000000000000043",schema:"resNFe_v1.01.xsd",xml:summaryXml});expect(parsed.lastNsu).toBe("000000000000043")});
+  it("monta a consulta pontual da NF-e por chave de acesso",()=>{const envelope=buildAccessKeyEnvelope({environment:"PRODUCTION",ufCode:35,cnpj:"98765432000199"},accessKey);expect(envelope).toContain("<tpAmb>1</tpAmb>");expect(envelope).toContain(`<consChNFe><chNFe>${accessKey}</chNFe></consChNFe>`);expect(()=>buildAccessKeyEnvelope({environment:"PRODUCTION",ufCode:35,cnpj:"98765432000199"},"123")).toThrow("chave de acesso")});
 });
