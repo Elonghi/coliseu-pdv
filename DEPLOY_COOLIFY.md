@@ -15,6 +15,7 @@ O Coolify gera e persiste automaticamente `SERVICE_PASSWORD_64_POSTGRES` e `SERV
 
 Cadastre antes do primeiro deploy:
 
+- `APP_URL=https://pdv.seu-dominio.com.br`, usando o domínio público definitivo sem barra no final. Essa URL também é usada na prévia de compartilhamento do WhatsApp.
 - `SEED_ON_DEPLOY=true` apenas no primeiro deploy.
 - `SEED_ADMIN_EMAIL` e `SEED_OPERATOR_EMAIL`.
 - `SEED_ADMIN_PASSWORD` e `SEED_OPERATOR_PASSWORD`, ambas com pelo menos 12 caracteres.

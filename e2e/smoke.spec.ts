@@ -15,6 +15,18 @@ async function login(page: Page, email: string, password: string) {
 }
 
 test.describe.serial("fluxos essenciais", () => {
+  test("landing publica a prévia social do WhatsApp", async ({ page, request }) => {
+    await page.goto("/");
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute("content", /Coliseu PDV/);
+    await expect(page.locator('meta[property="og:description"]')).toHaveAttribute("content", /PDV, estoque, financeiro/);
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /opengraph-image/);
+    const imageUrl = await page.locator('meta[property="og:image"]').getAttribute("content");
+    const parsedImageUrl = new URL(imageUrl!);
+    const imageResponse = await request.get(`${parsedImageUrl.pathname}${parsedImageUrl.search}`);
+    expect(imageResponse.ok()).toBeTruthy();
+    expect(imageResponse.headers()["content-type"]).toContain("image/png");
+  });
+
   test("administrador entra e visualiza o dashboard", async ({ page }) => {
     await login(page, adminEmail, seedPassword);
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();

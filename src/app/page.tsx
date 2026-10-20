@@ -20,10 +20,26 @@ import {
 } from "lucide-react";
 import styles from "./landing.module.css";
 
+const shareTitle = "Gestão completa para lojas de TCG";
+const shareDescription = "PDV, estoque, financeiro, jogadores e notas fiscais em um sistema criado para lojas de TCG.";
+
 export const metadata: Metadata = {
-  title: "Gestão completa para lojas de TCG",
-  description:
-    "PDV, estoque, financeiro, jogadores e notas fiscais em um sistema criado para lojas de TCG.",
+  title: shareTitle,
+  description: shareDescription,
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: `Coliseu PDV — ${shareTitle}`,
+    description: shareDescription,
+    type: "website",
+    locale: "pt_BR",
+    url: "/",
+    siteName: "Coliseu PDV",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `Coliseu PDV — ${shareTitle}`,
+    description: shareDescription,
+  },
 };
 
 const modules = [

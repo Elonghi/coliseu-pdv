@@ -19,8 +19,13 @@ services:
     depends_on:
       db: { condition: service_healthy }
   app:
-    build: { context: ., target: runner }
+    build:
+      context: .
+      target: runner
+      args:
+        APP_URL: ${APP_URL:-http://localhost:3000}
     environment:
+      APP_URL: ${APP_URL:-http://localhost:3000}
       DATABASE_URL: postgresql://coliseu:${POSTGRES_PASSWORD:-coliseu}@db:5432/coliseu
       STORAGE_PATH: /app/storage
       SESSION_TTL_HOURS: 12
