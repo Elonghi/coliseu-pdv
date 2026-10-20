@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "theme" varchar(12) DEFAULT 'SYSTEM' NOT NULL;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_theme_valid" CHECK ("users"."theme" IN ('LIGHT', 'DARK', 'SYSTEM'));

@@ -16,8 +16,11 @@ Sistema de frente de caixa e gestão para uma loja, com múltiplos operadores, e
 - Dashboard separa faturamento de vendas do fluxo de caixa realizado, evitando dupla contagem.
 - Distribuição automática de NF-e destinadas ao CNPJ por NSU, usando certificado A1 e o Web Service oficial `NFeDistribuicaoDFe`.
 - Armazenamento do XML oficial, normalização de cabeçalho/itens/eventos e consulta no painel administrativo.
+- Visão fiscal separada entre notas de entrada e saída pela posição do CNPJ da loja, incluindo resumos distribuídos pela SEFAZ.
+- Geração de DANFE em PDF com chave de acesso em código de barras e exportação contábil em ZIP, com XMLs organizados e CSV-resumo.
 - Importação retroativa de até 100 XMLs de NF-e por lote, com validação do CNPJ, deduplicação e histórico por arquivo.
 - Entrada automática no estoque dos itens de NF-e autorizadas destinadas à loja, incluindo custo médio, quantidade, vínculo por EAN/código do fornecedor e estorno seguro em cancelamentos.
+- Menu administrativo recolhível e responsivo, com temas claro, escuro ou automático persistidos individualmente por usuário.
 
 ## Desenvolvimento
 

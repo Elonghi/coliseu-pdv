@@ -27,10 +27,15 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: userRole("role").notNull(),
   active: boolean("active").default(true).notNull(),
+  theme: varchar("theme", { length: 12 }).default("SYSTEM").notNull(),
   totpSecretEncrypted: text("totp_secret_encrypted"),
   totpEnabled: boolean("totp_enabled").default(false).notNull(),
   ...timestamps,
-}, (t) => [uniqueIndex("users_email_lower_uidx").on(sql`lower(${t.email})`), index("users_role_active_idx").on(t.role, t.active)]);
+}, (t) => [
+  uniqueIndex("users_email_lower_uidx").on(sql`lower(${t.email})`),
+  index("users_role_active_idx").on(t.role, t.active),
+  check("users_theme_valid", sql`${t.theme} IN ('LIGHT', 'DARK', 'SYSTEM')`),
+]);
 
 export const sessions = pgTable("sessions", {
   id: uuid("id").defaultRandom().primaryKey(),

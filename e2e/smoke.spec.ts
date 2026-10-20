@@ -20,6 +20,17 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByText("Faturamento — últimos 14 dias")).toBeVisible();
     await expect(page.getByText("Fluxo financeiro realizado — últimos 14 dias")).toBeVisible();
+    await page.getByRole("button", { name: "Recolher menu" }).click();
+    await expect(page.getByRole("button", { name: "Expandir menu" })).toBeVisible();
+    await page.getByRole("button", { name: "Expandir menu" }).click();
+    await page.getByRole("button", { name: "Tema Escuro" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.getByRole("button", { name: "Tema Claro" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   });
 
   test("administrador acessa as novas áreas operacionais", async ({ page }) => {
@@ -50,11 +61,16 @@ test.describe.serial("fluxos essenciais", () => {
   test("administrador acessa o painel de notas fiscais", async ({ page }) => {
     await login(page, adminEmail, seedPassword);
     await page.goto("/admin/fiscal");
-    await expect(page.getByRole("heading", { name: "Notas fiscais recebidas" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Notas fiscais", exact: true })).toBeVisible();
     await expect(page.getByLabel("Empresa emitente")).toBeVisible();
     await expect(page.getByRole("button", { name: "Sincronizar agora" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Importar XMLs" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Documentos" })).toBeVisible();
+    await page.getByRole("link", { name: "Entradas e saídas" }).first().click();
+    await expect(page.getByRole("heading", { name: "Notas de entrada e saída" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Notas de entrada" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Notas de saída" })).toBeVisible();
+    await page.goto("/admin/fiscal");
     await page.getByRole("link", { name: "Importação e SEFAZ" }).first().click();
     await expect(page.getByRole("heading", { name: "Importação e SEFAZ" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sincronizar agora" })).toBeVisible();

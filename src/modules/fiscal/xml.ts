@@ -1,7 +1,7 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 
-type XmlValue = string | number | boolean | null | XmlObject | XmlValue[];
-interface XmlObject { [key: string]: XmlValue }
+export type XmlValue = string | number | boolean | null | XmlObject | XmlValue[];
+export interface XmlObject { [key: string]: XmlValue }
 
 const parser = new XMLParser({
   ignoreAttributes: false,
