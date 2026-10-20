@@ -7,8 +7,6 @@ import { ChevronDown, ChevronLeft, ChevronRight, LogOut, PanelLeftClose, Shoppin
 import { logoutAction } from "@/modules/auth/actions";
 import type { Permission } from "@/modules/auth/permissions";
 import type { SessionUser } from "@/modules/auth/session";
-import { InterfaceModeToggle } from "@/components/interface-mode-toggle";
-import { useInterfaceMode } from "@/components/interface-mode-provider";
 import { adminNavigationGroups as groups } from "@/components/admin-navigation";
 
 export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
@@ -19,7 +17,6 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
   onClose: () => void;
 }) {
   const pathname = usePathname();
-  const { mode } = useInterfaceMode();
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   const groupStorageKey = `coliseu:admin-menu-groups:${user.id}`;
   const allowed = (permission: Permission | null) => user.role === "ADMIN" || !permission || user.permissions.includes(permission);
@@ -48,7 +45,7 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
   return <aside className={`admin-sidebar ${collapsed ? "is-collapsed" : ""} ${mobileOpen ? "is-open" : ""}`} aria-label="Navegação principal">
     <div className="admin-brand">
       <span className="admin-brand-mark"><Store size={20}/></span>
-      <div className="admin-brand-copy"><span>COLISEU</span><strong>{mode === "MODERN" ? "Operações" : "Gestão PDV"}</strong></div>
+      <div className="admin-brand-copy"><span>COLISEU</span><strong>Gestão PDV</strong></div>
       <button className="admin-mobile-close" type="button" onClick={onClose} aria-label="Fechar menu"><X size={21}/></button>
     </div>
 
@@ -72,13 +69,12 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
             title={collapsed ? label : undefined}
             aria-current={active(href) ? "page" : undefined}
             onClick={onClose}
-          ><i className="admin-nav-icon"><Icon size={18}/></i><span>{label}</span></Link>)}</div>
+          ><Icon size={18}/><span>{label}</span></Link>)}</div>
         </section> : null;
       })}
     </nav>
 
     <div className="admin-sidebar-footer">
-      <InterfaceModeToggle/>
       <div className="admin-user">
         <span className="admin-avatar">{user.name.slice(0, 1).toUpperCase()}</span>
         <div><strong>{user.name}</strong><small>{user.role === "ADMIN" ? "Administrador" : "Operador"}</small></div>

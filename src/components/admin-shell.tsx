@@ -4,13 +4,10 @@ import { useEffect, useState } from "react";
 import { Menu, Store } from "lucide-react";
 import type { SessionUser } from "@/modules/auth/session";
 import { AdminNav } from "@/components/admin-nav";
-import { ModernTopbar } from "@/components/modern-topbar";
-import { useInterfaceMode } from "@/components/interface-mode-provider";
 
 const STORAGE_KEY = "coliseu:admin-menu-collapsed";
 
 export function AdminShell({ user, children }: { user: SessionUser; children: React.ReactNode }) {
-  const { mode } = useInterfaceMode();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -27,7 +24,7 @@ export function AdminShell({ user, children }: { user: SessionUser; children: Re
     return next;
   });
 
-  return <div className={`admin-shell ${collapsed ? "menu-collapsed" : ""} ${mode === "MODERN" ? "modern-shell" : "legacy-shell"}`}>
+  return <div className={`admin-shell ${collapsed ? "menu-collapsed" : ""}`}>
     <header className="admin-mobile-header">
       <button type="button" onClick={() => setMobileOpen(true)} aria-label="Abrir menu"><Menu size={22}/></button>
       <div><Store size={18}/><strong>Coliseu Gestão</strong></div>
@@ -35,9 +32,6 @@ export function AdminShell({ user, children }: { user: SessionUser; children: Re
     </header>
     {mobileOpen && <button className="admin-menu-backdrop" type="button" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}
     <AdminNav user={user} collapsed={collapsed} mobileOpen={mobileOpen} onToggle={toggle} onClose={() => setMobileOpen(false)}/>
-    <div className="admin-workspace">
-      {mode === "MODERN" && <ModernTopbar user={user}/>}
-      <main className="admin-content">{children}</main>
-    </div>
+    <main className="admin-content">{children}</main>
   </div>;
 }

@@ -20,7 +20,7 @@ Sistema de frente de caixa e gestão para uma loja, com múltiplos operadores, e
 - Geração de DANFE em PDF com chave de acesso em código de barras e exportação contábil em ZIP, com XMLs organizados e CSV-resumo.
 - Importação retroativa de até 100 XMLs de NF-e por lote, com validação do CNPJ, deduplicação e histórico por arquivo.
 - Entrada automática no estoque dos itens de NF-e autorizadas destinadas à loja, incluindo custo médio, quantidade, vínculo por EAN/código do fornecedor e estorno seguro em cancelamentos.
-- Menu administrativo responsivo, com barra e grupos recolhíveis, além da escolha individual entre o visual Legado e o visual Novo.
+- Menu administrativo responsivo, com barra lateral e grupos recolhíveis.
 
 ## Desenvolvimento
 
