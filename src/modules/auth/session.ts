@@ -8,8 +8,8 @@ import { shouldUseSecureSessionCookie } from "@/lib/security";
 
 import type { Permission } from "./permissions";
 
-export type UserTheme = "LIGHT" | "DARK" | "SYSTEM";
-export type SessionUser = { id: string; name: string; email: string; role: "ADMIN" | "OPERATOR"; theme: UserTheme; permissions: Permission[] };
+export type InterfaceMode = "LEGACY" | "MODERN";
+export type SessionUser = { id: string; name: string; email: string; role: "ADMIN" | "OPERATOR"; interfaceMode: InterfaceMode; permissions: Permission[] };
 const COOKIE_NAME = "coliseu_session";
 const hashToken = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -31,7 +31,7 @@ export async function destroySession() {
 export async function getCurrentUser(): Promise<SessionUser | null> {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) return null;
-  const result = await pool.query<SessionUser>(`SELECT u.id,u.name,u.email,u.role,u.theme,
+  const result = await pool.query<SessionUser>(`SELECT u.id,u.name,u.email,u.role,u.interface_mode AS "interfaceMode",
     COALESCE(array_agg(up.permission) FILTER (WHERE up.permission IS NOT NULL),'{}') permissions
     FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN user_permissions up ON up.user_id=u.id
     WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true GROUP BY u.id`, [hashToken(token)]);

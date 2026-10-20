@@ -1,7 +1,7 @@
 import { requireUser } from "@/modules/auth/session";
-import { ThemeProvider } from "@/components/theme-provider";
+import { InterfaceModeProvider } from "@/components/interface-mode-provider";
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  return <ThemeProvider initialTheme={user.theme}>{children}</ThemeProvider>;
+  return <InterfaceModeProvider initialMode={user.interfaceMode}>{children}</InterfaceModeProvider>;
 }

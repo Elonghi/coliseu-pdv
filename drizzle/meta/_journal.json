@@ -92,6 +92,13 @@
       "when": 1792506832808,
       "tag": "0012_yielding_karma",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792508497765,
+      "tag": "0013_absurd_gauntlet",
+      "breakpoints": true
     }
   ]
 }

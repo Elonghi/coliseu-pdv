@@ -23,14 +23,18 @@ test.describe.serial("fluxos essenciais", () => {
     await page.getByRole("button", { name: "Recolher menu" }).click();
     await expect(page.getByRole("button", { name: "Expandir menu" })).toBeVisible();
     await page.getByRole("button", { name: "Expandir menu" }).click();
-    await page.getByRole("button", { name: "Tema Escuro" }).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.getByRole("button", { name: "Operação" }).click();
+    await expect(page.getByRole("link", { name: "Vendas" })).toBeHidden();
+    await page.getByRole("button", { name: "Operação" }).click();
+    await expect(page.getByRole("link", { name: "Vendas" })).toBeVisible();
+    await page.getByRole("button", { name: "Novo", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-interface", "modern");
     await page.reload();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await page.getByRole("button", { name: "Tema Claro" }).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect(page.locator("html")).toHaveAttribute("data-interface", "modern");
+    await page.getByRole("button", { name: "Legado", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-interface", "legacy");
     await page.reload();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect(page.locator("html")).toHaveAttribute("data-interface", "legacy");
   });
 
   test("administrador acessa as novas áreas operacionais", async ({ page }) => {
