@@ -2,6 +2,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  serverExternalPackages: ["pdfkit"],
+  outputFileTracingIncludes: {
+    "/api/fiscal/invoices/*/pdf": [
+      "./node_modules/pdfkit/js/standard-fonts/**/*.cjs",
+      "./node_modules/pdfkit/js/data/sRGB_IEC61966_2_1.icc",
+    ],
+  },
   poweredByHeader: false,
   allowedDevOrigins: ["127.0.0.1"],
   experimental: {
