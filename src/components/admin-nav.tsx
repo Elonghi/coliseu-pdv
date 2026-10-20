@@ -3,25 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  ArrowLeftRight, Banknote, BarChart3, Boxes, ChevronDown, ChevronLeft, ChevronRight,
-  ClipboardCheck, CreditCard, FileInput, FileText, History, LayoutDashboard, LogOut,
-  Package, PanelLeftClose, ShieldCheck, ShoppingBag, Store, Tags, Truck, UserRound,
-  Users, WalletCards, X,
-} from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, LogOut, PanelLeftClose, ShoppingBag, Store, X } from "lucide-react";
 import { logoutAction } from "@/modules/auth/actions";
-import { permissions, type Permission } from "@/modules/auth/permissions";
+import type { Permission } from "@/modules/auth/permissions";
 import type { SessionUser } from "@/modules/auth/session";
 import { InterfaceModeToggle } from "@/components/interface-mode-toggle";
-
-const groups = [
-  { id: "overview", label: "Visão geral", links: [["/admin", "Dashboard", LayoutDashboard, permissions.DASHBOARD_VIEW]] },
-  { id: "operation", label: "Operação", links: [["/admin/sales", "Vendas", ShoppingBag, permissions.SALES_VIEW], ["/admin/cash", "Caixas", Banknote, permissions.CASH_MANAGE], ["/admin/stock", "Estoque", BarChart3, permissions.STOCK_MANAGE], ["/admin/inventory", "Inventários", ClipboardCheck, permissions.INVENTORY_MANAGE], ["/admin/finance", "Financeiro", WalletCards, permissions.FINANCE_MANAGE], ["/admin/purchases", "Compras", Truck, permissions.PURCHASE_MANAGE]] },
-  { id: "catalog", label: "Catálogo", links: [["/admin/products", "Produtos", Package, permissions.CATALOG_MANAGE], ["/admin/labels", "Etiquetas", Tags, permissions.CATALOG_MANAGE], ["/admin/categories", "Categorias", Boxes, permissions.CATALOG_MANAGE], ["/admin/payment-methods", "Pagamentos", CreditCard, permissions.CATALOG_MANAGE]] },
-  { id: "relationship", label: "Relacionamento", links: [["/admin/players", "Jogadores", UserRound, permissions.PLAYERS_MANAGE], ["/admin/users", "Usuários", Users, permissions.USERS_MANAGE]] },
-  { id: "fiscal", label: "Fiscal", links: [["/admin/fiscal", "Notas fiscais", FileText, permissions.FISCAL_MANAGE], ["/admin/fiscal/movements", "Entradas e saídas", ArrowLeftRight, permissions.FISCAL_MANAGE], ["/admin/fiscal/integration", "Importação e SEFAZ", FileInput, permissions.FISCAL_MANAGE]] },
-  { id: "security", label: "Segurança", links: [["/admin/audit", "Auditoria", History, permissions.AUDIT_VIEW], ["/security", "Minha segurança", ShieldCheck, null]] },
-] as const;
+import { useInterfaceMode } from "@/components/interface-mode-provider";
+import { adminNavigationGroups as groups } from "@/components/admin-navigation";
 
 export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
   user: SessionUser;
@@ -31,6 +19,7 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
   onClose: () => void;
 }) {
   const pathname = usePathname();
+  const { mode } = useInterfaceMode();
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   const groupStorageKey = `coliseu:admin-menu-groups:${user.id}`;
   const allowed = (permission: Permission | null) => user.role === "ADMIN" || !permission || user.permissions.includes(permission);
@@ -59,7 +48,7 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
   return <aside className={`admin-sidebar ${collapsed ? "is-collapsed" : ""} ${mobileOpen ? "is-open" : ""}`} aria-label="Navegação principal">
     <div className="admin-brand">
       <span className="admin-brand-mark"><Store size={20}/></span>
-      <div className="admin-brand-copy"><span>COLISEU</span><strong>Gestão PDV</strong></div>
+      <div className="admin-brand-copy"><span>COLISEU</span><strong>{mode === "MODERN" ? "Operações" : "Gestão PDV"}</strong></div>
       <button className="admin-mobile-close" type="button" onClick={onClose} aria-label="Fechar menu"><X size={21}/></button>
     </div>
 
@@ -83,7 +72,7 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
             title={collapsed ? label : undefined}
             aria-current={active(href) ? "page" : undefined}
             onClick={onClose}
-          ><Icon size={18}/><span>{label}</span></Link>)}</div>
+          ><i className="admin-nav-icon"><Icon size={18}/></i><span>{label}</span></Link>)}</div>
         </section> : null;
       })}
     </nav>

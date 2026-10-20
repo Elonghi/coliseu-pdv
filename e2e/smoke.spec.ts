@@ -17,6 +17,10 @@ async function login(page: Page, email: string, password: string) {
 test.describe.serial("fluxos essenciais", () => {
   test("administrador entra e visualiza o dashboard", async ({ page }) => {
     await login(page, adminEmail, seedPassword);
+    const legacyMode = page.getByRole("button", { name: "Legado", exact: true });
+    if (await legacyMode.getAttribute("aria-pressed") !== "true") await legacyMode.click();
+    await expect(legacyMode).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("html")).toHaveAttribute("data-interface", "legacy");
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByText("Faturamento — últimos 14 dias")).toBeVisible();
     await expect(page.getByText("Fluxo financeiro realizado — últimos 14 dias")).toBeVisible();
@@ -29,6 +33,15 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.getByRole("link", { name: "Vendas" })).toBeVisible();
     await page.getByRole("button", { name: "Novo", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-interface", "modern");
+    await expect(page.getByText("Operação online")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Abrir PDV" }).last()).toBeVisible();
+    await page.keyboard.press("Control+K");
+    const navigation = page.getByRole("dialog", { name: "Navegação rápida" });
+    await expect(navigation).toBeVisible();
+    await navigation.getByLabel("Buscar módulo").fill("Notas fiscais");
+    await expect(navigation.getByRole("link", { name: "Notas fiscais" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(navigation).toBeHidden();
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-interface", "modern");
     await page.getByRole("button", { name: "Legado", exact: true }).click();
