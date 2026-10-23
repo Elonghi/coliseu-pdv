@@ -8,9 +8,9 @@ const playerName = `Jogador E2E ${Date.now()}`;
 
 async function login(page: Page, email: string, password: string) {
   await page.goto("/login");
-  await page.getByLabel("E-mail").fill(email);
-  await page.getByLabel("Senha").fill(password);
-  await page.getByRole("button", { name: "Entrar" }).click();
+  await page.getByLabel("E-mail corporativo").fill(email);
+  await page.getByLabel("Senha", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Entrar no sistema" }).click();
   await page.waitForURL((url) => url.pathname !== "/login");
 }
 
@@ -25,6 +25,19 @@ test.describe.serial("fluxos essenciais", () => {
     const imageResponse = await request.get(`${parsedImageUrl.pathname}${parsedImageUrl.search}`);
     expect(imageResponse.ok()).toBeTruthy();
     expect(imageResponse.headers()["content-type"]).toContain("image/png");
+  });
+
+  test("login oferece sessão persistente sem armazenar a senha", async ({ page, context }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { name: "Bem-vindo de volta" })).toBeVisible();
+    await page.getByLabel("E-mail corporativo").fill(adminEmail);
+    await page.getByLabel("Senha", { exact: true }).fill(seedPassword);
+    await page.getByLabel("Manter conectado neste dispositivo").check();
+    await page.getByRole("button", { name: "Entrar no sistema" }).click();
+    await page.waitForURL((url) => url.pathname !== "/login");
+    const session = (await context.cookies()).find((cookie) => cookie.name === "coliseu_session");
+    expect(session?.httpOnly).toBeTruthy();
+    expect(session?.expires ?? 0).toBeGreaterThan(Date.now() / 1000 + 28 * 86_400);
   });
 
   test("administrador entra e visualiza o dashboard", async ({ page }) => {
@@ -92,6 +105,10 @@ test.describe.serial("fluxos essenciais", () => {
     await page.goto("/admin/finance");
     await expect(page.getByRole("heading", { name: "Contas a pagar e receber" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Duplicatas por fornecedor" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Filtros financeiros" })).toBeVisible();
+    await expect(page.getByLabel("Fornecedor")).toBeVisible();
+    await expect(page.getByLabel("Vencimento rápido")).toBeVisible();
+    await expect(page.getByLabel("Saldo mínimo (R$)")).toBeVisible();
     await expect(page.getByText("Contas e liquidações geradas automaticamente pelas operações do sistema.")).toBeVisible();
     await expect(page.getByText("Como a SEFAZ não informa pagamentos, a baixa das duplicatas é registrada manualmente.")).toBeVisible();
   });

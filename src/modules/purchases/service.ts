@@ -66,6 +66,9 @@ export async function linkPurchaseInvoice(orderId:string,invoiceId:string,userId
     const invoice=await client.query<{id:string;issuer_cnpj_cpf:string|null}>("SELECT id,issuer_cnpj_cpf FROM fiscal_invoices WHERE id=$1 AND status='AUTHORIZED' AND has_full_xml=true",[invoiceId]);
     if(!invoice.rowCount)throw new AppError("NF-e autorizada e completa não encontrada.",404);
     if(order.rows[0].document&&invoice.rows[0].issuer_cnpj_cpf&&order.rows[0].document!==invoice.rows[0].issuer_cnpj_cpf)throw new AppError("A empresa emitente da NF-e não corresponde ao fornecedor do pedido.",409);
+    const stockEntry=await client.query<{total:number;entered:number}>(`SELECT count(*)::int total,count(*) FILTER (WHERE stock_imported_at IS NOT NULL AND stock_reversed_at IS NULL)::int entered
+      FROM fiscal_invoice_items WHERE invoice_id=$1`,[invoiceId]);
+    if(!stockEntry.rows[0].total||stockEntry.rows[0].entered!==stockEntry.rows[0].total)throw new AppError("Dê entrada nos itens da NF-e antes de vinculá-la ao pedido de compra.",409);
     await client.query(`UPDATE purchase_order_items poi SET received_quantity=COALESCE((SELECT CASE WHEN sum(fii.quantity)=trunc(sum(fii.quantity)) THEN sum(fii.quantity)::int ELSE 0 END FROM fiscal_invoice_items fii WHERE fii.invoice_id=$1 AND fii.product_id=poi.product_id),0),updated_at=now() WHERE poi.order_id=$2`,[invoiceId,orderId]);
     const remaining=await client.query<{total:number}>("SELECT count(*)::int total FROM purchase_order_items WHERE order_id=$1 AND received_quantity<ordered_quantity",[orderId]);
     const status=remaining.rows[0].total?"PARTIAL":"RECEIVED";

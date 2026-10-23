@@ -6,7 +6,7 @@ import { distributeDfe, queryDfeByAccessKey } from "./client";
 import { getFiscalIdentityConfig, getSefazConfig, type FiscalIdentityConfig, type SefazConfig } from "./config";
 import { manifestationLabel, normalizeDfeXml, type NormalizedDfe } from "./xml";
 import { cancelFiscalPayable, createPayableFromFiscalInvoice } from "@/modules/finance/service";
-import { cancelFiscalInvoiceStock, importFiscalInvoiceToStock } from "./stock";
+import { cancelFiscalInvoiceStock } from "./stock";
 
 type SyncState = { id: string; last_nsu: string; max_nsu: string; next_sync_at: Date };
 export type SefazSyncResult = { status: "completed" | "deferred" | "running"; documents: number; recovered: number; batches: number; lastNsu?: string; maxNsu?: string; message: string };
@@ -56,7 +56,6 @@ async function persistInvoice(client: PoolClient, stateId: string, sourceDocumen
     await cancelFiscalPayable(client, invoiceId);
     await cancelFiscalInvoiceStock(client, invoiceId, actorId);
   } else if (invoice.hasFullXml && current.rows[0]?.status === "AUTHORIZED" && normalizeDocument(invoice.recipientCnpjCpf) === normalizeDocument(companyCnpj)) {
-    await importFiscalInvoiceToStock(client, { invoiceId, actorId, accessKey: invoice.accessKey, number: invoice.number, issuerName: invoice.issuerName, issuerDocument: invoice.issuerCnpjCpf });
     if (normalized.billing?.duplicates.length) {
       await createPayableFromFiscalInvoice(client, {
         fiscalInvoiceId: invoiceId,

@@ -13,6 +13,7 @@ import { cancelSale } from "@/modules/sales/service";
 import { adjustStock, splitProductIntoBoosters } from "@/modules/stock/service";
 import { adjustPlayerCredit, createPlayer, updatePlayer } from "@/modules/players/service";
 import { syncSefazDfe } from "@/modules/fiscal/service";
+import { receiveFiscalInvoiceStock } from "@/modules/fiscal/stock";
 import { settleFinancialInstallment } from "@/modules/finance/service";
 
 export type ActionState = { ok?: string; error?: string };
@@ -194,5 +195,19 @@ export async function sefazSyncAction(): Promise<ActionState> {
     revalidatePath("/admin/fiscal");
     revalidatePath("/admin/fiscal/integration");
     return { ok: result.status === "completed" ? `${result.documents} documento(s) recebido(s) em ${result.batches} lote(s). ${result.recovered} resumo(s) recuperado(s) com itens.` : result.message };
+  } catch (error) { return { error: message(error) }; }
+}
+
+export async function fiscalStockEntryAction(_: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    const user = await requirePermission(permissions.STOCK_MANAGE);
+    const invoiceId = String(form.get("invoiceId") ?? "");
+    const result = await receiveFiscalInvoiceStock(invoiceId, user.id);
+    revalidatePath(`/admin/fiscal/${invoiceId}`);
+    revalidatePath("/admin/products");
+    revalidatePath("/admin/stock");
+    if (result.errors) return { error: `${result.entered} item(ns) recebido(s), mas ${result.errors} item(ns) precisam de revisão. Consulte a situação de cada item abaixo.` };
+    if (!result.entered) return { ok: "Todos os itens desta nota já haviam sido lançados no estoque." };
+    return { ok: `${result.entered} item(ns) lançado(s) no estoque. Custos e saldos foram atualizados.` };
   } catch (error) { return { error: message(error) }; }
 }

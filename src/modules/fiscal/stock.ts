@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
+import { pool } from "@/db";
+import { AppError } from "@/lib/errors";
 import { isSplittableSealedProduct } from "@/modules/catalog/classification";
 
 type FiscalStockInput = {
@@ -81,7 +83,10 @@ async function resolveProduct(client: PoolClient, item: FiscalItemRow, input: Fi
   return { productId: definitive.rows[0]?.product_id ?? productId, created };
 }
 
-export async function importFiscalInvoiceToStock(client: PoolClient, input: FiscalStockInput) {
+export type FiscalStockEntryResult = { entered: number; alreadyEntered: number; errors: number };
+
+export async function importFiscalInvoiceToStock(client: PoolClient, input: FiscalStockInput): Promise<FiscalStockEntryResult> {
+  const summary: FiscalStockEntryResult = { entered: 0, alreadyEntered: 0, errors: 0 };
   const items = await client.query<FiscalItemRow>(`SELECT id,product_code,ean,description,ncm,cfop,unit,quantity,
     unit_value_cents::float8,total_cents::float8,discount_cents::float8,freight_cents::float8,insurance_cents::float8,other_cents::float8
     FROM fiscal_invoice_items WHERE invoice_id=$1 ORDER BY item_number`, [input.invoiceId]);
@@ -89,17 +94,20 @@ export async function importFiscalInvoiceToStock(client: PoolClient, input: Fisc
     const quantity = Number(item.quantity);
     if (!Number.isSafeInteger(quantity) || quantity <= 0) {
       await client.query("UPDATE fiscal_invoice_items SET stock_import_error=$1 WHERE id=$2", [`Quantidade ${item.quantity ?? "ausente"} não é inteira e positiva.`, item.id]);
+      summary.errors++;
       continue;
     }
     const gross = item.total_cents ?? (item.unit_value_cents === null ? null : item.unit_value_cents * quantity);
     if (gross === null) {
       await client.query("UPDATE fiscal_invoice_items SET stock_import_error='Item sem valor de custo no XML.' WHERE id=$1", [item.id]);
+      summary.errors++;
       continue;
     }
     const totalCost = Math.max(0, gross - (item.discount_cents ?? 0) + (item.freight_cents ?? 0) + (item.insurance_cents ?? 0) + (item.other_cents ?? 0));
     const unitCostCents = Math.round(totalCost / quantity);
     if (!Number.isSafeInteger(unitCostCents) || unitCostCents < 0 || unitCostCents > 2_147_483_647) {
       await client.query("UPDATE fiscal_invoice_items SET stock_import_error='Custo do item fora do limite aceito.' WHERE id=$1", [item.id]);
+      summary.errors++;
       continue;
     }
     const { productId } = await resolveProduct(client, item, input, unitCostCents);
@@ -107,6 +115,7 @@ export async function importFiscalInvoiceToStock(client: PoolClient, input: Fisc
     const existing = await client.query("SELECT 1 FROM stock_movements WHERE fiscal_invoice_item_id=$1 AND type='FISCAL_ENTRY'", [item.id]);
     if (existing.rowCount) {
       await client.query("UPDATE fiscal_invoice_items SET product_id=$1,stock_import_error=NULL WHERE id=$2", [productId, item.id]);
+      summary.alreadyEntered++;
       continue;
     }
     const previous = product.rows[0].stock_quantity;
@@ -114,9 +123,47 @@ export async function importFiscalInvoiceToStock(client: PoolClient, input: Fisc
     const averageCost = next === 0 ? unitCostCents : Math.round((previous * product.rows[0].cost_cents + totalCost) / next);
     await client.query("UPDATE products SET stock_quantity=$1,cost_cents=$2,updated_at=now() WHERE id=$3", [next, averageCost, productId]);
     await client.query(`INSERT INTO stock_movements (product_id,type,quantity_delta,previous_quantity,new_quantity,fiscal_invoice_item_id,user_id,notes)
-      VALUES ($1,'FISCAL_ENTRY',$2,$3,$4,$5,$6,$7)`, [productId, quantity, previous, next, item.id, input.actorId ?? null, `Entrada automática da NF-e ${input.number ?? input.accessKey}`]);
+      VALUES ($1,'FISCAL_ENTRY',$2,$3,$4,$5,$6,$7)`, [productId, quantity, previous, next, item.id, input.actorId ?? null, `Entrada confirmada da NF-e ${input.number ?? input.accessKey}`]);
     await client.query("UPDATE fiscal_invoice_items SET product_id=$1,stock_unit_cost_cents=$2,stock_imported_at=now(),stock_reversed_at=NULL,stock_import_error=NULL WHERE id=$3", [productId, unitCostCents, item.id]);
     await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'FISCAL_STOCK_ENTRY','fiscal_invoice_item',$2,$3)", [input.actorId ?? null, item.id, JSON.stringify({ invoiceId: input.invoiceId, productId, quantity, unitCostCents, previousQuantity: previous, newQuantity: next })]);
+    summary.entered++;
+  }
+  return summary;
+}
+
+export async function receiveFiscalInvoiceStock(invoiceId: string, actorId?: string): Promise<FiscalStockEntryResult> {
+  if (!/^[0-9a-f-]{36}$/i.test(invoiceId)) throw new AppError("Nota fiscal inválida.", 422);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const invoice = await client.query<{
+      id: string; access_key: string; number: string | null; status: string; has_full_xml: boolean;
+      issuer_cnpj_cpf: string | null; issuer_name: string | null; recipient_cnpj_cpf: string | null; company_cnpj: string;
+    }>(`SELECT f.id,f.access_key,f.number,f.status,f.has_full_xml,f.issuer_cnpj_cpf,f.issuer_name,f.recipient_cnpj_cpf,s.company_cnpj
+      FROM fiscal_invoices f JOIN sefaz_sync_states s ON s.id=f.sync_state_id WHERE f.id=$1 FOR UPDATE OF f`, [invoiceId]);
+    const note = invoice.rows[0];
+    if (!note) throw new AppError("Nota fiscal não encontrada.", 404);
+    if (!note.has_full_xml) throw new AppError("Obtenha o XML completo antes de dar entrada no estoque.", 409);
+    if (note.status !== "AUTHORIZED") throw new AppError("Somente uma NF-e autorizada pode dar entrada no estoque.", 409);
+    const recipient = note.recipient_cnpj_cpf?.replace(/\D/g, "");
+    if (!recipient || recipient !== note.company_cnpj.replace(/\D/g, "")) throw new AppError("Somente notas de entrada emitidas para a loja podem movimentar o estoque.", 409);
+    const itemCount = await client.query<{ total: number }>("SELECT count(*)::int total FROM fiscal_invoice_items WHERE invoice_id=$1", [invoiceId]);
+    if (!itemCount.rows[0].total) throw new AppError("A nota fiscal não possui itens disponíveis para entrada.", 409);
+    const result = await importFiscalInvoiceToStock(client, {
+      invoiceId,
+      actorId,
+      accessKey: note.access_key,
+      number: note.number ?? undefined,
+      issuerName: note.issuer_name ?? undefined,
+      issuerDocument: note.issuer_cnpj_cpf ?? undefined,
+    });
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
 }
 

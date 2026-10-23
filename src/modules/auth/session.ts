@@ -12,12 +12,13 @@ export type SessionUser = { id: string; name: string; email: string; role: "ADMI
 const COOKIE_NAME = "coliseu_session";
 const hashToken = (value: string) => createHash("sha256").update(value).digest("hex");
 
-export async function createSession(userId: string) {
+export async function createSession(userId: string, remember = false) {
   const token = randomBytes(32).toString("base64url");
-  const ttlHours = Math.max(1, Number(process.env.SESSION_TTL_HOURS ?? 12));
-  const expires = new Date(Date.now() + ttlHours * 3_600_000);
+  const regularHours = Math.min(168, Math.max(1, Number(process.env.SESSION_TTL_HOURS ?? 12) || 12));
+  const rememberedDays = Math.min(365, Math.max(1, Number(process.env.REMEMBER_SESSION_TTL_DAYS ?? 30) || 30));
+  const expires = new Date(Date.now() + (remember ? rememberedDays * 86_400_000 : regularHours * 3_600_000));
   await pool.query("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)", [hashToken(token), userId, expires]);
-  (await cookies()).set(COOKIE_NAME, token, { httpOnly: true, secure: shouldUseSecureSessionCookie(), sameSite: "lax", path: "/", expires });
+  (await cookies()).set(COOKIE_NAME, token, { httpOnly: true, secure: shouldUseSecureSessionCookie(), sameSite: "lax", path: "/", priority: "high", ...(remember ? { expires } : {}) });
 }
 
 export async function destroySession() {

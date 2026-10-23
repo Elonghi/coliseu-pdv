@@ -54,6 +54,51 @@ tbody tr:last-child td { border-bottom: 0; }
 .notice-error { color: #b42318; background: #fee4e2; padding: .7rem; border-radius: 8px; }
 .notice-ok { color: #067647; background: #dcfae6; padding: .7rem; border-radius: 8px; }
 
+/* Login: acesso limpo, institucional e sem distrações. */
+.login-page { min-height: 100dvh; display: grid; grid-template-columns: minmax(380px, 47%) minmax(480px, 53%); background: #eef2f6; }
+.login-presentation { min-height: 100dvh; display: flex; flex-direction: column; justify-content: space-between; padding: clamp(34px, 5vw, 72px); color: #eef4fb; background: #172744; }
+.login-brand { width: fit-content; display: flex; align-items: center; gap: .8rem; color: white; text-decoration: none; }
+.login-brand > span, .login-mobile-brand > span { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 10px; color: white; background: #12a965; font-size: 1.15rem; font-weight: 900; }
+.login-brand > div { display: grid; line-height: 1.05; }
+.login-brand small { color: #62dda1; font-size: .67rem; font-weight: 900; letter-spacing: .2em; }
+.login-brand b { margin-top: .3rem; font-size: .92rem; }
+.login-presentation-copy { width: min(100%, 610px); margin-block: clamp(46px, 8vh, 90px); }
+.login-eyebrow { margin: 0 0 .8rem; color: #0c9560; font-size: .72rem; font-weight: 900; letter-spacing: .16em; }
+.login-presentation .login-eyebrow { color: #62dda1; }
+.login-presentation-copy > h1 { max-width: 560px; margin: 0; color: white; font-size: clamp(2.35rem, 4.4vw, 4.8rem); line-height: .98; letter-spacing: -.045em; }
+.login-presentation-copy > p:not(.login-eyebrow) { max-width: 560px; margin: 1.4rem 0 0; color: #b9c6d7; font-size: 1.03rem; line-height: 1.65; }
+.login-resource-list { margin-top: 2.2rem; display: grid; gap: .85rem; }
+.login-resource-list article { display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: .9rem; }
+.login-resource-list article > span { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / .12); border-radius: 10px; color: #72e1ad; background: rgb(255 255 255 / .06); }
+.login-resource-list article > div { display: grid; gap: .18rem; }
+.login-resource-list article b { color: white; font-size: .92rem; }
+.login-resource-list article p { margin: 0; color: #9eacc0; font-size: .79rem; line-height: 1.35; }
+.login-security { margin: 0; display: flex; align-items: center; gap: .55rem; color: #98a9bf; font-size: .76rem; }
+.login-access { min-height: 100dvh; display: grid; place-items: center; padding: 38px clamp(24px, 6vw, 96px); }
+.login-card { width: min(100%, 470px); }
+.login-back { width: fit-content; display: flex; align-items: center; gap: .4rem; margin-bottom: clamp(38px, 8vh, 76px); color: var(--muted); font-size: .82rem; font-weight: 750; text-decoration: none; }
+.login-back:hover { color: var(--ink); }
+.login-card header h2 { margin: 0; color: var(--ink); font-size: clamp(2rem, 4vw, 2.65rem); letter-spacing: -.035em; }
+.login-card header > p:last-child { margin: .7rem 0 0; color: var(--muted); line-height: 1.5; }
+.login-mobile-brand { display: none; }
+.login-form { margin-top: 2rem; display: grid; gap: 1.15rem; }
+.login-field-label { display: grid; gap: .48rem; color: var(--ink-soft); font-size: .82rem; font-weight: 800; }
+.login-field-label > small { margin-left: .25rem; color: var(--muted); font-size: .7rem; font-weight: 500; }
+.login-field-wrap { position: relative; display: flex; align-items: center; }
+.login-field-wrap > svg { position: absolute; left: 13px; color: #8491a3; pointer-events: none; }
+.login-field-wrap input { width: 100%; height: 48px; padding: 0 44px 0 42px; border: 1px solid var(--line-strong); border-radius: 10px; color: var(--ink); background: white; outline: none; }
+.login-field-wrap input:focus { border-color: #12a965; box-shadow: 0 0 0 3px rgb(18 169 101 / .13); }
+.login-field-wrap input[aria-invalid="true"] { border-color: #e07a72; }
+.login-password-toggle { position: absolute; right: 8px; width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; }
+.login-password-toggle:hover { color: var(--ink); background: var(--surface-soft); }
+.login-remember { display: flex; align-items: flex-start; gap: .7rem; color: var(--ink-soft); cursor: pointer; }
+.login-remember input { width: 17px; height: 17px; margin-top: 2px; accent-color: #12a965; }
+.login-remember span { display: grid; gap: .15rem; }
+.login-remember b { font-size: .8rem; }
+.login-remember small { color: var(--muted); font-size: .7rem; }
+.login-submit { min-height: 48px; margin-top: .25rem; background: #172744; }
+.login-card footer { margin-top: 2rem; padding-top: 1.2rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .73rem; line-height: 1.5; }
+
 /* Shell administrativo e recolhimento completo da barra. */
 .admin-shell { min-height: 100dvh; display: grid; grid-template-columns: 255px minmax(0, 1fr); transition: grid-template-columns .22s ease; }
 .admin-shell.menu-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
@@ -114,6 +159,13 @@ tbody tr:last-child td { border-bottom: 0; }
 .print-label { width: 64mm; height: 38mm; overflow: hidden; padding: 10px; border: 1px dashed var(--line-strong); background: var(--surface); }
 
 @media (max-width: 900px) {
+  .login-page { display: block; background: white; }
+  .login-presentation { display: none; }
+  .login-access { min-height: 100dvh; padding: 28px 20px 42px; background: white; }
+  .login-card { width: min(100%, 480px); }
+  .login-back { margin-bottom: 34px; }
+  .login-mobile-brand { margin-bottom: 38px; display: flex; align-items: center; gap: .7rem; color: var(--ink); }
+  .login-mobile-brand > span { width: 36px; height: 36px; }
   .admin-shell, .admin-shell.menu-collapsed { display: block; padding-top: 62px; }
   .admin-mobile-header { position: fixed; inset: 0 0 auto; z-index: 35; height: 62px; display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; padding: 0 14px; color: #e7edf6; background: #172744; border-bottom: 1px solid rgb(255 255 255 / .09); }
   .admin-mobile-header button { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 9px; color: inherit; background: rgb(255 255 255 / .07); }

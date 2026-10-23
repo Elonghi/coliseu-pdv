@@ -19,7 +19,7 @@ Sistema de frente de caixa e gestão para uma loja, com múltiplos operadores, e
 - Visão fiscal separada entre notas de entrada e saída pela posição do CNPJ da loja, incluindo resumos distribuídos pela SEFAZ.
 - Geração de DANFE em PDF com chave de acesso em código de barras e exportação contábil em ZIP, com XMLs organizados e CSV-resumo.
 - Importação retroativa de até 100 XMLs de NF-e por lote, com validação do CNPJ, deduplicação e histórico por arquivo.
-- Entrada automática no estoque dos itens de NF-e autorizadas destinadas à loja, incluindo custo médio, quantidade, vínculo por EAN/código do fornecedor e estorno seguro em cancelamentos.
+- Entrada confirmada pelo usuário para os itens de NF-e autorizadas destinadas à loja, incluindo custo médio, quantidade, vínculo por EAN/código do fornecedor e estorno seguro em cancelamentos.
 - Menu administrativo responsivo, com barra lateral e grupos recolhíveis.
 
 ## Desenvolvimento
@@ -79,7 +79,7 @@ Configure o monitor HTTP do Coolify para `/api/health`. O endpoint verifica banc
 
 Na mesma tela, administradores podem importar notas antigas selecionando vários arquivos `.xml`. Cada arquivo pode ter até 5 MB e o lote até 50 MB. A importação aceita NF-e completa (`NFe`/`nfeProc`) pertencente ao CNPJ configurado, preserva o XML original e não altera o último NSU da integração.
 
-Notas completas, autorizadas e destinadas ao CNPJ da loja geram automaticamente as entradas de estoque e as contas a pagar das duplicatas. O produto é localizado pelo mapeamento do fornecedor, EAN, SKU ou nome exato. Quando não existe, é criado inativo com o custo fiscal e deve ter preço/cadastro revisados antes da ativação no PDV. A chave única por item fiscal torna a operação idempotente; reimportar o mesmo XML não soma estoque novamente.
+Notas completas, autorizadas e destinadas ao CNPJ da loja geram automaticamente as contas a pagar das duplicatas, mas não alteram o estoque durante a importação. Na tela da nota, o botão de entrada confirma o recebimento físico e só então atualiza quantidades e custo médio. O produto é localizado pelo mapeamento do fornecedor, EAN, SKU ou nome exato; quando não existe, é criado inativo e deve ter preço/cadastro revisados antes da ativação no PDV. A chave única por item fiscal torna a operação idempotente e impede que uma segunda confirmação some o mesmo item novamente.
 
 ## Produção com Docker
 
