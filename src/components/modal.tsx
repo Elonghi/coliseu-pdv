@@ -25,7 +25,7 @@ export function Modal({ trigger, triggerClassName = "btn btn-ghost", triggerTitl
   useEffect(() => {
     if (!open) return;
     dialog.current?.showModal();
-    dialog.current?.querySelector<HTMLElement>(".dialog-body input:not([type=hidden]):not([disabled]), .dialog-body select, .dialog-body textarea")?.focus();
+    dialog.current?.querySelector<HTMLElement>(".dialog-body input:not([type=hidden]):not([disabled]), .dialog-body select, .dialog-body textarea")?.focus({ preventScroll: true });
   }, [open]);
 
   return <>

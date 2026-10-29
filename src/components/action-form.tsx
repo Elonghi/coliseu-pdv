@@ -42,7 +42,9 @@ export function ActionForm({ action, children, className, submitLabel = "Salvar"
   }, {});
 
   useEffect(() => {
-    if (state.error && submitted.current && form.current) restoreFields(form.current, submitted.current);
+    if (!state.error || !submitted.current || !form.current) return;
+    restoreFields(form.current, submitted.current);
+    form.current.querySelector(".form-notice")?.scrollIntoView({ block: "nearest" });
   }, [state]);
 
   return <form ref={form} action={formAction} className={`${className ?? ""} ${inline ? "form-inline" : ""}`}>

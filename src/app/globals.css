@@ -107,7 +107,9 @@ tbody tr:last-child td { border-bottom: 0; }
 .admin-shell .card > .table-wrap:first-child > table > thead th:last-child, .admin-shell .card.table-wrap > table > thead th:last-child { border-top-right-radius: 14px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .cell-wrap { white-space: normal; min-width: 14rem; }
+.cell-status { min-width: 12rem; max-width: 22rem; }
 .cell-main { display: grid; gap: .1rem; }
+.cell-main > .badge { justify-self: start; }
 .cell-main > b, .cell-main > strong { font-weight: 650; color: var(--ink); }
 .cell-sub, .cell-main > small { color: var(--muted); font-size: .78rem; font-weight: 400; }
 .col-actions { width: 1%; text-align: right; }
@@ -249,6 +251,29 @@ a.stat:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); t
 .step.is-current { color: var(--ink); }
 .step.is-current::before { background: var(--brand); }
 
+/* Conferência de recebimento da NF-e. */
+.receipt-question { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem; padding: .8rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.receipt-question > p { margin: 0; color: var(--ink); font-weight: 700; }
+.receipt-list { display: grid; gap: .5rem; margin: 0; padding: 0; max-height: 42dvh; overflow-y: auto; list-style: none; }
+.receipt-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .4rem .75rem; padding: .7rem .85rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.receipt-item.is-received { border-color: #b7ebcf; background: #f6fdf9; }
+.receipt-item.is-missing { border-color: #fedf89; background: #fffcf5; }
+.receipt-item.is-skipped { border-color: var(--line); background: var(--surface-soft); }
+.receipt-icon { display: grid; place-items: center; }
+.receipt-item.is-received .receipt-icon { color: #067647; }
+.receipt-item.is-missing .receipt-icon { color: #b54708; }
+.receipt-item.is-skipped .receipt-icon { color: #98a2b3; }
+.receipt-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem; }
+.receipt-list.is-review .receipt-controls { grid-column: 2 / -1; justify-content: flex-start; }
+.receipt-controls > select.field { width: 11.5rem; }
+.receipt-quantity { display: flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .78rem; white-space: nowrap; }
+.receipt-quantity > input.field { width: 4.8rem; }
+.receipt-static { color: var(--ink-soft); font-size: .85rem; font-weight: 650; white-space: nowrap; }
+.receipt-warning, .receipt-note { grid-column: 2 / -1; font-size: .78rem; line-height: 1.4; }
+.receipt-warning { color: #93370d; font-weight: 650; }
+.receipt-note { color: var(--muted); }
+.receipt-summary { margin: 0; padding: .65rem .85rem; border-radius: 10px; background: var(--info-soft); color: #1849a9; font-size: .85rem; }
+
 /* Modais e avisos. */
 .dialog { text-align: left; white-space: normal; width: min(560px, calc(100vw - 2rem)); max-height: min(90dvh, 920px); margin: auto; padding: 0; border: 0; border-radius: 18px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg); overflow: hidden; }
 .dialog[open] { display: flex; flex-direction: column; animation: fade-up .18s ease-out; }
@@ -259,6 +284,7 @@ a.stat:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); t
 .dialog-title { margin: 0; font-size: 1.1rem; font-weight: 750; letter-spacing: -.01em; }
 .dialog-desc { margin: .3rem 0 0; color: var(--muted); font-size: .85rem; line-height: 1.5; }
 .dialog-body { padding: 1.25rem; overflow-y: auto; }
+.dialog-body .form-actions { position: sticky; bottom: -1.25rem; z-index: 2; margin: .25rem -1.25rem -1.25rem; padding: .85rem 1.25rem; border-top: 1px solid var(--line); background: var(--surface); }
 body:has(dialog[open]) { overflow: hidden; }
 .toast-stack { position: fixed; right: 1.1rem; bottom: 1.1rem; z-index: 200; display: grid; gap: .6rem; width: min(380px, calc(100vw - 2rem)); pointer-events: none; }
 .toast { pointer-events: auto; display: flex; align-items: flex-start; gap: .7rem; padding: .85rem .9rem .85rem 1rem; border-radius: 12px; background: #101828; color: #fff; font-size: .875rem; font-weight: 550; line-height: 1.45; box-shadow: var(--shadow-lg); animation: fade-up .2s ease-out; }
@@ -347,6 +373,7 @@ body:has(dialog[open]) { overflow: hidden; }
 .admin-quick-actions form { display: contents; }
 .admin-content { min-width: 0; padding: 28px clamp(20px, 3vw, 38px) 56px; }
 .admin-content > * { max-width: 1480px; margin-inline: auto; }
+.admin-content > .grid { grid-template-columns: minmax(0, 1fr); }
 
 .admin-sidebar.is-collapsed .admin-brand { justify-content: center; padding-inline: 0; }
 .admin-sidebar.is-collapsed .admin-brand-copy, .admin-sidebar.is-collapsed .admin-nav-group-toggle, .admin-sidebar.is-collapsed .admin-nav-link span, .admin-sidebar.is-collapsed .admin-user > div, .admin-sidebar.is-collapsed .admin-quick-actions span { display: none; }
