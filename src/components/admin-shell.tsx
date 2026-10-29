@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Menu, Store } from "lucide-react";
 import type { SessionUser } from "@/modules/auth/session";
 import { AdminNav } from "@/components/admin-nav";
+import { adminNavigationGroups, type AdminNavigationLink } from "@/components/admin-navigation";
+import { ToastProvider } from "@/components/toast";
 
 const STORAGE_KEY = "coliseu:admin-menu-collapsed";
 
 export function AdminShell({ user, children }: { user: SessionUser; children: React.ReactNode }) {
+  const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -24,14 +28,22 @@ export function AdminShell({ user, children }: { user: SessionUser; children: Re
     return next;
   });
 
-  return <div className={`admin-shell ${collapsed ? "menu-collapsed" : ""}`}>
-    <header className="admin-mobile-header">
-      <button type="button" onClick={() => setMobileOpen(true)} aria-label="Abrir menu"><Menu size={22}/></button>
-      <div><Store size={18}/><strong>Coliseu Gestão</strong></div>
-      <span className="admin-avatar">{user.name.slice(0, 1).toUpperCase()}</span>
-    </header>
-    {mobileOpen && <button className="admin-menu-backdrop" type="button" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}
-    <AdminNav user={user} collapsed={collapsed} mobileOpen={mobileOpen} onToggle={toggle} onClose={() => setMobileOpen(false)}/>
-    <main className="admin-content">{children}</main>
-  </div>;
+  const links: AdminNavigationLink[] = [];
+  for (const group of adminNavigationGroups) links.push(...group.links);
+  const currentLabel = links
+    .filter(([href]) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b[0].length - a[0].length)[0]?.[1];
+
+  return <ToastProvider>
+    <div className={`admin-shell ${collapsed ? "menu-collapsed" : ""}`}>
+      <header className="admin-mobile-header">
+        <button type="button" onClick={() => setMobileOpen(true)} aria-label="Abrir menu"><Menu size={22}/></button>
+        <div><Store size={18}/><strong>{currentLabel ?? "Coliseu Gestão"}</strong></div>
+        <span className="admin-avatar">{user.name.slice(0, 1).toUpperCase()}</span>
+      </header>
+      {mobileOpen && <button className="admin-menu-backdrop" type="button" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}
+      <AdminNav user={user} collapsed={collapsed} mobileOpen={mobileOpen} onToggle={toggle} onClose={() => setMobileOpen(false)}/>
+      <main className="admin-content">{children}</main>
+    </div>
+  </ToastProvider>;
 }

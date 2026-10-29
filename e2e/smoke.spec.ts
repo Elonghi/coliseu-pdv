@@ -74,11 +74,12 @@ test.describe.serial("fluxos essenciais", () => {
   test("administrador cadastra jogador para uso de crédito", async ({ page }) => {
     await login(page, adminEmail, seedPassword);
     await page.goto("/admin/players");
-    const createForm = page.locator("main form").first();
+    await page.getByRole("button", { name: "Novo jogador" }).click();
+    const createForm = page.getByRole("dialog");
     await createForm.getByLabel("Nome").fill(playerName);
     await createForm.getByLabel("E-mail").fill(`jogador-e2e-${Date.now()}@coliseu.local`);
     await createForm.getByRole("button", { name: "Salvar" }).click();
-    await expect(page.getByRole("heading", { name: playerName })).toBeVisible();
+    await expect(page.locator("td b", { hasText: playerName })).toBeVisible();
   });
 
   test("administrador acessa o painel de notas fiscais", async ({ page }) => {
@@ -105,9 +106,9 @@ test.describe.serial("fluxos essenciais", () => {
     await page.goto("/admin/finance");
     await expect(page.getByRole("heading", { name: "Contas a pagar e receber" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Duplicatas por fornecedor" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Filtros financeiros" })).toBeVisible();
     await expect(page.getByLabel("Fornecedor")).toBeVisible();
-    await expect(page.getByLabel("Vencimento rápido")).toBeVisible();
+    await expect(page.getByRole("group", { name: "Vencimento" })).toBeVisible();
+    await page.getByText("Datas e valores").click();
     await expect(page.getByLabel("Saldo mínimo (R$)")).toBeVisible();
     await expect(page.getByText("Contas e liquidações geradas automaticamente pelas operações do sistema.")).toBeVisible();
     await expect(page.getByText("Como a SEFAZ não informa pagamentos, a baixa das duplicatas é registrada manualmente.")).toBeVisible();
@@ -116,6 +117,7 @@ test.describe.serial("fluxos essenciais", () => {
   test("administrador encontra somente produtos habilitados para abrir", async ({ page }) => {
     await login(page, adminEmail, seedPassword);
     await page.goto("/admin/stock");
+    await page.getByRole("button", { name: "Abrir produto em boosters" }).click();
     await expect(page.getByRole("heading", { name: "Abrir produto em boosters" })).toBeVisible();
     const source = page.getByLabel("Produto para abrir");
     await expect(source.locator("option", { hasText: "Magic Foundations — Play Booster Box" })).toHaveCount(1);

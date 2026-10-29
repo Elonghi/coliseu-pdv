@@ -1,15 +1,78 @@
+import Link from "next/link";
+import { AlertTriangle, Banknote, CalendarDays, HandCoins, PackageX, ReceiptText, ShoppingBag, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { DashboardCharts } from "@/components/dashboard-charts";
+import { EmptyState, PageHeader, StatCard } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
 import { getDashboard } from "@/modules/dashboard/queries";
-import { permissions } from "@/modules/auth/permissions";
+import { hasPermission, permissions } from "@/modules/auth/permissions";
 import { requirePermission } from "@/modules/auth/session";
 
 export const dynamic = "force-dynamic";
+
+const percent = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" });
+
 export default async function DashboardPage() {
-  await requirePermission(permissions.DASHBOARD_VIEW);
-  const data = await getDashboard(); const k = data.kpis;
-  const variation=k.previous_month_cents?`${(((k.month_cents-k.previous_month_cents)/k.previous_month_cents)*100).toFixed(1)}% vs. mês anterior`:"Sem base anterior";
-  const cards = [["Hoje",formatMoney(k.today_cents),""],["Semana",formatMoney(k.week_cents),""],["Mês",formatMoney(k.month_cents),variation],["Ticket médio",formatMoney(k.avg_cents),""],["Vendas hoje",String(k.today_count),""],["Vendas no mês",String(k.month_count),""]];
-  const f=data.financial;
-  return <div className="dashboard-page grid gap-6"><header className="dashboard-header"><p className="text-sm text-gray-500 font-bold">VISÃO GERAL</p><h1 className="text-3xl font-black">Dashboard</h1></header><section className="dashboard-kpis grid sm:grid-cols-2 xl:grid-cols-6 gap-3">{cards.map(([label,value,detail]) => <article className="card p-4" key={label}><p className="text-xs text-gray-500 font-bold uppercase">{label}</p><strong className="text-xl block mt-2">{value}</strong>{detail&&<small className="text-gray-500">{detail}</small>}</article>)}</section><section className="dashboard-finance grid sm:grid-cols-2 xl:grid-cols-4 gap-3"><article className="card p-4 border-l-4 border-l-emerald-500"><p className="text-gray-500 text-sm">A receber</p><b className="text-2xl">{formatMoney(f.receivable_cents)}</b><small className="block text-red-600">Vencido: {formatMoney(f.overdue_receivable_cents)}</small></article><article className="card p-4 border-l-4 border-l-red-500"><p className="text-gray-500 text-sm">A pagar</p><b className="text-2xl">{formatMoney(f.payable_cents)}</b><small className="block text-red-600">Vencido: {formatMoney(f.overdue_payable_cents)}</small></article><article className="card p-4 border-l-4 border-l-blue-500"><p className="text-gray-500 text-sm">Créditos de jogadores</p><b className="text-2xl">{formatMoney(f.player_credit_cents)}</b></article><article className="card p-4 border-l-4 border-l-amber-500"><p className="text-gray-500 text-sm">Dívidas de jogadores</p><b className="text-2xl">{formatMoney(f.player_debt_cents)}</b></article></section><section className="dashboard-stock grid sm:grid-cols-2 gap-3"><article className="card p-4 border-l-4 border-l-amber-400"><p className="text-gray-500 text-sm">Estoque baixo</p><b className="text-2xl">{data.stock.low}</b></article><article className="card p-4 border-l-4 border-l-red-500"><p className="text-gray-500 text-sm">Sem estoque</p><b className="text-2xl">{data.stock.empty}</b></article></section><DashboardCharts daily={data.daily} payments={data.payments} cashFlow={data.cashFlow}/><section className="dashboard-top-products card"><div className="p-5"><h2 className="font-black">Produtos mais vendidos — mês</h2></div><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Quantidade</th><th>Faturamento</th><th>Margem aprox.</th></tr></thead><tbody>{data.top.map(p => <tr key={p.name}><td className="font-bold">{p.name}</td><td>{p.quantity}</td><td>{formatMoney(p.revenue_cents)}</td><td>{formatMoney(p.margin_cents)}</td></tr>)}{!data.top.length && <tr><td colSpan={4}>Nenhuma venda no período.</td></tr>}</tbody></table></div></section></div>;
+  const user = await requirePermission(permissions.DASHBOARD_VIEW);
+  const data = await getDashboard();
+  const { kpis: k, financial: f, stock } = data;
+  const change = k.previous_month_cents ? ((k.month_cents - k.previous_month_cents) / k.previous_month_cents) * 100 : null;
+  const link = (permission: Parameters<typeof hasPermission>[1], href: string) => hasPermission(user, permission) ? href : undefined;
+  const financeLink = (type: string) => link(permissions.FINANCE_MANAGE, `/admin/finance?type=${type}`);
+
+  return <div className="section-gap">
+    <PageHeader eyebrow="Visão geral" title="Dashboard" description="Vendas, financeiro e alertas de estoque em um só lugar."/>
+
+    <section className="grid gap-3" aria-label="Vendas">
+      <h2 className="page-eyebrow">Vendas</h2>
+      <div className="stat-grid">
+        <StatCard primary icon={ShoppingBag} label="Hoje" value={formatMoney(k.today_cents)} hint={`${k.today_count} venda(s) confirmada(s)`}/>
+        <StatCard icon={CalendarDays} label="Semana" value={formatMoney(k.week_cents)} hint="Desde segunda-feira"/>
+        <StatCard
+          icon={change !== null && change < 0 ? TrendingDown : TrendingUp}
+          label="Mês"
+          value={formatMoney(k.month_cents)}
+          hint={change === null ? `${k.month_count} venda(s) · Sem base anterior` : `${k.month_count} venda(s) · ${percent.format(change)}% vs. mês anterior`}
+          hintTone={change === null ? undefined : change < 0 ? "danger" : "ok"}
+        />
+        <StatCard icon={ReceiptText} label="Ticket médio" value={formatMoney(k.avg_cents)} hint="Média das vendas do mês"/>
+      </div>
+    </section>
+
+    <section className="grid gap-3" aria-label="Financeiro">
+      <h2 className="page-eyebrow">Financeiro e relacionamento</h2>
+      <div className="stat-grid">
+        <StatCard tone="ok" icon={Banknote} label="A receber" value={formatMoney(f.receivable_cents)} href={financeLink("RECEIVABLE")} hint={f.overdue_receivable_cents ? `Vencido: ${formatMoney(f.overdue_receivable_cents)}` : "Nada vencido"} hintTone={f.overdue_receivable_cents ? "danger" : undefined}/>
+        <StatCard tone="danger" icon={Wallet} label="A pagar" value={formatMoney(f.payable_cents)} href={financeLink("PAYABLE")} hint={f.overdue_payable_cents ? `Vencido: ${formatMoney(f.overdue_payable_cents)}` : "Nada vencido"} hintTone={f.overdue_payable_cents ? "danger" : undefined}/>
+        <StatCard tone="info" icon={HandCoins} label="Créditos de jogadores" value={formatMoney(f.player_credit_cents)} href={link(permissions.PLAYERS_MANAGE, "/admin/players?balance=credit")} hint="Saldo a favor dos jogadores"/>
+        <StatCard tone="warn" icon={HandCoins} label="Dívidas de jogadores" value={formatMoney(f.player_debt_cents)} href={link(permissions.PLAYERS_MANAGE, "/admin/players?balance=debt")} hint="Valores a receber dos jogadores"/>
+      </div>
+    </section>
+
+    <section className="grid gap-3" aria-label="Alertas de estoque">
+      <h2 className="page-eyebrow">Estoque</h2>
+      <div className="stat-grid">
+        <StatCard tone={stock.low ? "warn" : undefined} icon={AlertTriangle} label="Estoque baixo" value={stock.low} href={link(permissions.STOCK_MANAGE, "/admin/stock?status=low")} hint="Produtos ativos abaixo do mínimo"/>
+        <StatCard tone={stock.empty ? "danger" : undefined} icon={PackageX} label="Sem estoque" value={stock.empty} href={link(permissions.STOCK_MANAGE, "/admin/stock?status=empty")} hint="Produtos ativos com saldo zerado"/>
+      </div>
+    </section>
+
+    <DashboardCharts daily={data.daily} payments={data.payments} cashFlow={data.cashFlow}/>
+
+    <section className="card">
+      <div className="panel-head">
+        <div><h2 className="panel-title">Produtos mais vendidos — mês</h2><p className="panel-desc">Ordenados pela quantidade vendida no mês corrente.</p></div>
+        {hasPermission(user, permissions.SALES_VIEW) && <Link className="btn btn-ghost btn-sm" href="/admin/sales">Ver relatório</Link>}
+      </div>
+      {data.top.length ? <div className="table-wrap"><table>
+        <thead><tr><th>#</th><th>Produto</th><th className="num">Quantidade</th><th className="num">Faturamento</th><th className="num">Margem aprox.</th></tr></thead>
+        <tbody>{data.top.map((product, index) => <tr key={product.name}>
+          <td className="muted">{index + 1}</td>
+          <td className="cell-wrap"><b>{product.name}</b></td>
+          <td className="num">{product.quantity}</td>
+          <td className="num">{formatMoney(product.revenue_cents)}</td>
+          <td className={`num ${product.margin_cents < 0 ? "neg" : ""}`}>{formatMoney(product.margin_cents)}</td>
+        </tr>)}</tbody>
+      </table></div> : <EmptyState icon={ShoppingBag} title="Nenhuma venda no período" description="Os produtos mais vendidos aparecem aqui assim que houver vendas no mês."/>}
+    </section>
+  </div>;
 }

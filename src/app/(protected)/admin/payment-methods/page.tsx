@@ -1,4 +1,20 @@
+import { PageHeader } from "@/components/ui";
 import { pool } from "@/db";
 import { paymentMethodAction } from "@/modules/admin/actions";
-export const dynamic="force-dynamic";
-export default async function PaymentMethodsPage(){const methods=await pool.query("SELECT code,name,active FROM payment_methods ORDER BY sort_order");return <div className="grid gap-5"><header><p className="text-sm text-gray-500 font-bold">CONFIGURAÇÕES</p><h1 className="text-3xl font-black">Formas de pagamento</h1></header><section className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">{methods.rows.map(m=><form action={paymentMethodAction} className="card p-4 grid gap-3" key={m.code}><input type="hidden" name="code" value={m.code}/><div><p className="font-black">{m.name}</p><small className="text-gray-500">{m.code}</small></div><label className="flex gap-2 font-bold"><input type="checkbox" name="active" defaultChecked={m.active}/> Ativa</label><button className="btn btn-primary">Salvar</button></form>)}</section></div>}
+
+export const dynamic = "force-dynamic";
+
+export default async function PaymentMethodsPage() {
+  const methods = await pool.query<{ code: string; name: string; active: boolean }>("SELECT code,name,active FROM payment_methods ORDER BY sort_order");
+  return <div className="section-gap">
+    <PageHeader eyebrow="Configurações" title="Formas de pagamento" description="Escolha quais formas de pagamento ficam disponíveis no PDV."/>
+    <section className="card">
+      {methods.rows.map((method) => <form action={paymentMethodAction} className="row-form grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto]" key={method.code}>
+        <input type="hidden" name="code" value={method.code}/>
+        <span className="cell-main"><b>{method.name}</b><small className="mono">{method.code}</small></span>
+        <label className="switch"><input type="checkbox" name="active" defaultChecked={method.active}/><span>Ativa</span></label>
+        <button className="btn btn-ghost btn-sm">Salvar</button>
+      </form>)}
+    </section>
+  </div>;
+}

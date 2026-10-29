@@ -1,6 +1,9 @@
 import Link from "next/link";
-import { ArrowDownToLine, ArrowUpFromLine, Download, FileText, PackageOpen } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, CheckCircle2, Download, FileSearch, FileText, PackageOpen, Wallet } from "lucide-react";
+import { FilterBar, SearchField } from "@/components/filter-bar";
+import { Badge, EmptyState, PageHeader, Pagination, StatCard } from "@/components/ui";
 import { pool } from "@/db";
+import { formatDate } from "@/lib/format";
 import { formatMoney } from "@/lib/money";
 import { sefazPublicConfig } from "@/modules/fiscal/config";
 import { formatFiscalDocument } from "@/modules/fiscal/direction";
@@ -22,7 +25,7 @@ export default async function FiscalMovementsPage({ searchParams }: { searchPara
   const direction: Direction = query.direction === "EXIT" ? "EXIT" : "ENTRY";
   const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
   const perPage = 40;
-  if (!config.cnpj) return <div className="card p-6 notice-error">Configure <b>SEFAZ_CNPJ</b> para separar as notas de entrada e saída da empresa.</div>;
+  if (!config.cnpj) return <div className="section-gap"><PageHeader eyebrow="Movimentação fiscal" title="Notas de entrada e saída"/><p className="notice-warn">Configure <b>SEFAZ_CNPJ</b> para separar as notas de entrada e saída da empresa.</p></div>;
 
   const values: unknown[] = [config.cnpj];
   const directionCondition = direction === "ENTRY" ? "(f.recipient_cnpj_cpf=$1 OR (f.recipient_cnpj_cpf IS NULL AND f.issuer_cnpj_cpf IS DISTINCT FROM $1))" : "f.issuer_cnpj_cpf=$1";
@@ -39,7 +42,6 @@ export default async function FiscalMovementsPage({ searchParams }: { searchPara
     pool.query<{ total: number; authorized: number; complete: number; value_cents: number }>(`SELECT count(*)::int total,count(*) FILTER (WHERE f.status='AUTHORIZED')::int authorized,count(*) FILTER (WHERE f.has_full_xml)::int complete,COALESCE(sum(f.total_cents) FILTER (WHERE f.status='AUTHORIZED'),0)::float8 value_cents FROM fiscal_invoices f ${condition}`, values),
   ]);
   const total = count.rows[0]?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
   const summary = metrics.rows[0] ?? { total: 0, authorized: 0, complete: 0, value_cents: 0 };
   const counterpartLabel = direction === "ENTRY" ? "Fornecedor" : "Destinatário";
 
@@ -47,45 +49,58 @@ export default async function FiscalMovementsPage({ searchParams }: { searchPara
   if (query.from) exportParams.set("from", query.from);
   if (query.to) exportParams.set("to", query.to);
 
-  return <div className="grid gap-6">
-    <header className="flex flex-wrap items-start justify-between gap-4">
-      <div><p className="text-sm text-gray-500 font-bold">MOVIMENTAÇÃO FISCAL</p><h1 className="text-3xl font-black">Notas de entrada e saída</h1><p className="text-gray-500">Documentos separados pela posição do CNPJ da loja na NF-e.</p></div>
-      <a className="btn btn-primary" href={`/api/fiscal/export?${exportParams}`}><Download size={17}/>Exportar para contabilidade</a>
-    </header>
+  const hasFilters = Boolean(query.q?.trim() || query.status || query.from || query.to);
+
+  return <div className="section-gap">
+    <PageHeader
+      eyebrow="Movimentação fiscal"
+      title="Notas de entrada e saída"
+      description="Documentos separados pela posição do CNPJ da loja na NF-e."
+      actions={<a className="btn btn-primary" href={`/api/fiscal/export?${exportParams}`}><Download size={16}/>Exportar para contabilidade</a>}
+    />
 
     <nav className="fiscal-direction-tabs" aria-label="Tipo de movimentação">
       <Link className={direction === "ENTRY" ? "is-active" : ""} href={{ pathname: "/admin/fiscal/movements", query: { ...query, direction: "ENTRY", page: undefined } }}><ArrowDownToLine size={19}/><span><b>Notas de entrada</b><small>Compras e recebimentos</small></span></Link>
       <Link className={direction === "EXIT" ? "is-active" : ""} href={{ pathname: "/admin/fiscal/movements", query: { ...query, direction: "EXIT", page: undefined } }}><ArrowUpFromLine size={19}/><span><b>Notas de saída</b><small>Emissões da empresa</small></span></Link>
     </nav>
 
-    <section className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-      <article className="card metric-card"><FileText/><div><small>Documentos</small><strong>{summary.total}</strong></div></article>
-      <article className="card metric-card"><PackageOpen/><div><small>XMLs completos</small><strong>{summary.complete}</strong></div></article>
-      <article className="card metric-card"><ArrowDownToLine/><div><small>Autorizadas</small><strong>{summary.authorized}</strong></div></article>
-      <article className="card metric-card"><span className="metric-currency">R$</span><div><small>Valor autorizado</small><strong>{formatMoney(summary.value_cents)}</strong></div></article>
+    <section className="stat-grid" aria-label="Resumo fiscal">
+      <StatCard icon={FileText} label="Documentos" value={summary.total}/>
+      <StatCard icon={PackageOpen} label="XMLs completos" value={summary.complete}/>
+      <StatCard tone="ok" icon={CheckCircle2} label="Autorizadas" value={summary.authorized}/>
+      <StatCard tone="info" icon={Wallet} label="Valor autorizado" value={formatMoney(summary.value_cents)}/>
     </section>
 
-    <form className="card p-4 grid sm:grid-cols-2 xl:grid-cols-6 gap-3 items-end">
+    <FilterBar clearHref={`/admin/fiscal/movements?direction=${direction}`} hasFilters={hasFilters}>
       <input type="hidden" name="direction" value={direction}/>
-      <label className="label xl:col-span-2">Busca<input className="field" name="q" defaultValue={query.q} placeholder="Chave, número ou empresa"/></label>
-      <label className="label">Situação<select className="field" name="status" defaultValue={query.status ?? ""}><option value="">Todas</option><option value="AUTHORIZED">Autorizadas</option><option value="CANCELED">Canceladas</option><option value="DENIED">Denegadas</option><option value="UNKNOWN">Pendentes</option></select></label>
-      <label className="label">Emissão de<input className="field" type="date" name="from" defaultValue={query.from}/></label>
-      <label className="label">Emissão até<input className="field" type="date" name="to" defaultValue={query.to}/></label>
-      <button className="btn btn-primary">Filtrar</button>
-    </form>
+      <SearchField defaultValue={query.q} placeholder="Chave, número ou empresa"/>
+      <label className="toolbar-field">Situação<select className="field" name="status" defaultValue={query.status ?? ""}><option value="">Todas</option><option value="AUTHORIZED">Autorizadas</option><option value="CANCELED">Canceladas</option><option value="DENIED">Denegadas</option><option value="UNKNOWN">Pendentes</option></select></label>
+      <label className="toolbar-field">Emissão de<input className="field" type="date" name="from" defaultValue={query.from}/></label>
+      <label className="toolbar-field">Emissão até<input className="field" type="date" name="to" defaultValue={query.to}/></label>
+    </FilterBar>
 
     <section className="card">
-      <div className="p-5 flex flex-wrap justify-between gap-2"><div><h2 className="font-black">{direction === "ENTRY" ? "Entradas" : "Saídas"}</h2><p className="text-sm text-gray-500">{total} documento(s) encontrado(s)</p></div><span className="badge badge-warn">CNPJ {formatFiscalDocument(config.cnpj)}</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Emissão</th><th>Nota</th><th>{counterpartLabel}</th><th>Valor</th><th>Situação</th><th>Documento</th><th></th></tr></thead><tbody>
-        {invoices.rows.map((invoice) => {
-          const name = direction === "ENTRY" ? invoice.issuer_name : invoice.recipient_name;
-          const document = direction === "ENTRY" ? invoice.issuer_cnpj_cpf : invoice.recipient_cnpj_cpf;
-          return <tr key={invoice.id}><td>{invoice.issue_at?.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) ?? "—"}</td><td><b>{invoice.number ?? "—"}</b><small className="block text-gray-500">Série {invoice.series ?? "—"}</small></td><td><b>{name ?? "Não identificado"}</b><small className="block text-gray-500">{formatFiscalDocument(document)}</small></td><td className="font-bold">{invoice.total_cents === null ? "—" : formatMoney(invoice.total_cents)}</td><td><span className={`badge ${invoice.status === "AUTHORIZED" ? "badge-ok" : invoice.status === "CANCELED" ? "badge-danger" : "badge-warn"}`}>{statuses[invoice.status] ?? invoice.status}</span></td><td>{invoice.has_full_xml ? <span className="badge badge-ok">XML completo</span> : <span className="badge badge-warn">Resumo</span>}</td><td><div className="flex gap-2"><Link className="font-bold text-blue-700" href={`/admin/fiscal/${invoice.id}`}>Detalhes</Link>{invoice.has_full_xml && <a className="font-bold text-blue-700" href={`/api/fiscal/invoices/${invoice.id}/pdf`}>PDF</a>}</div></td></tr>;
-        })}
-        {!invoices.rowCount && <tr><td colSpan={7}>Nenhuma nota de {direction === "ENTRY" ? "entrada" : "saída"} encontrada.</td></tr>}
-      </tbody></table></div>
+      <div className="panel-head"><div><h2 className="panel-title">{direction === "ENTRY" ? "Entradas" : "Saídas"}</h2><p className="panel-desc">{total} documento(s) encontrado(s)</p></div><Badge tone="info">CNPJ {formatFiscalDocument(config.cnpj)}</Badge></div>
+      {invoices.rowCount ? <div className="table-wrap"><table>
+        <thead><tr><th>Emissão</th><th>Nota</th><th>{counterpartLabel}</th><th className="num">Valor</th><th>Situação</th><th>Documento</th><th className="col-actions"><span className="sr-only">Ações</span></th></tr></thead>
+        <tbody>
+          {invoices.rows.map((invoice) => {
+            const name = direction === "ENTRY" ? invoice.issuer_name : invoice.recipient_name;
+            const document = direction === "ENTRY" ? invoice.issuer_cnpj_cpf : invoice.recipient_cnpj_cpf;
+            return <tr key={invoice.id}>
+              <td>{formatDate(invoice.issue_at)}</td>
+              <td><span className="cell-main"><b>{invoice.number ?? "—"}</b><small>Série {invoice.series ?? "—"}</small></span></td>
+              <td className="cell-wrap"><span className="cell-main"><b>{name ?? "Não identificado"}</b><small>{formatFiscalDocument(document)}</small></span></td>
+              <td className="num"><b>{invoice.total_cents === null ? "—" : formatMoney(invoice.total_cents)}</b></td>
+              <td><Badge tone={invoice.status === "AUTHORIZED" ? "ok" : invoice.status === "CANCELED" ? "danger" : "warn"} dot>{statuses[invoice.status] ?? invoice.status}</Badge></td>
+              <td>{invoice.has_full_xml ? <Badge tone="ok">XML completo</Badge> : <Badge tone="warn">Resumo</Badge>}</td>
+              <td className="col-actions"><div className="row-actions"><Link className="btn btn-ghost btn-sm" href={`/admin/fiscal/${invoice.id}`}>Detalhes</Link>{invoice.has_full_xml && <a className="btn btn-ghost btn-sm" href={`/api/fiscal/invoices/${invoice.id}/pdf`}>PDF</a>}</div></td>
+            </tr>;
+          })}
+        </tbody>
+      </table></div> : <EmptyState icon={FileSearch} title={`Nenhuma nota de ${direction === "ENTRY" ? "entrada" : "saída"} encontrada`} description={hasFilters ? "Nenhuma nota corresponde aos filtros aplicados." : "As notas aparecem aqui depois da sincronização com a SEFAZ ou da importação de XMLs."}/>}
     </section>
 
-    {totalPages > 1 && <nav className="flex justify-center gap-2"><Link className="btn btn-ghost" aria-disabled={page <= 1} href={{ pathname: "/admin/fiscal/movements", query: { ...query, direction, page: String(Math.max(1, page - 1)) } }}>Anterior</Link><span className="p-2">Página {page} de {totalPages}</span><Link className="btn btn-ghost" aria-disabled={page >= totalPages} href={{ pathname: "/admin/fiscal/movements", query: { ...query, direction, page: String(Math.min(totalPages, page + 1)) } }}>Próxima</Link></nav>}
+    <Pagination pathname="/admin/fiscal/movements" query={{ ...query, direction }} page={page} perPage={perPage} total={total}/>
   </div>;
 }

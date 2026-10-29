@@ -29,3 +29,7 @@ export const permissionOptions: { code: Permission; label: string }[] = [
   { code: permissions.USERS_MANAGE, label: "Gerenciar usuários" },
   { code: permissions.AUDIT_VIEW, label: "Consultar auditoria" },
 ];
+
+export function hasPermission(user: { role: "ADMIN" | "OPERATOR"; permissions: readonly Permission[] }, permission: Permission) {
+  return user.role === "ADMIN" || user.permissions.includes(permission);
+}
