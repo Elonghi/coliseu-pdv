@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef } from "react";
 import type { ActionState } from "@/modules/admin/actions";
 import { useModalClose } from "@/components/modal";
 import { useToast } from "@/components/toast";
+import { readableError } from "@/lib/validation-message";
 
 type Variant = "primary" | "success" | "danger" | "danger-solid" | "ghost";
 
@@ -49,7 +50,7 @@ export function ActionForm({ action, children, className, submitLabel = "Salvar"
 
   return <form ref={form} action={formAction} className={`${className ?? ""} ${inline ? "form-inline" : ""}`}>
     {children}
-    {state.error && <p className="form-notice notice-error" role="alert">{state.error}</p>}
+    {state.error && <p className="form-notice notice-error" role="alert">{readableError(state.error)}</p>}
     {state.ok && !toast && <p className="form-notice notice-ok" role="status">{state.ok}</p>}
     <div className={`form-actions ${stickyActions ? "form-actions-sticky" : ""}`}>
       {cancelHref && <Link className="btn btn-ghost" href={cancelHref}>Cancelar</Link>}

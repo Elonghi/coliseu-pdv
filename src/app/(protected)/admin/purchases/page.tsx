@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Plus, Truck, UserPlus } from "lucide-react";
 import { ActionForm } from "@/components/action-form";
+import { MaskedInput } from "@/components/masked-input";
 import { Modal } from "@/components/modal";
 import { Badge, Chips, EmptyState, PageHeader, type Tone } from "@/components/ui";
 import { pool } from "@/db";
@@ -34,9 +35,9 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
         <Modal trigger={<><UserPlus size={16}/>Novo fornecedor</>} size="sm" title="Novo fornecedor" description="Cadastre quem fornece os produtos para poder criar pedidos de compra.">
           <ActionForm action={supplierCreateAction} submitLabel="Cadastrar fornecedor" className="grid gap-4">
             <label className="label">Nome<input className="field" name="name" required/></label>
-            <label className="label">CNPJ<input className="field" name="document" inputMode="numeric"/></label>
+            <label className="label">CNPJ (opcional)<MaskedInput kind="cnpj" name="document"/></label>
             <label className="label">E-mail<input className="field" type="email" name="email"/></label>
-            <label className="label">Telefone<input className="field" name="phone" inputMode="tel"/></label>
+            <label className="label">Telefone<MaskedInput kind="phone" name="phone"/></label>
           </ActionForm>
         </Modal>
         <Modal trigger={<><Plus size={16}/>Novo pedido</>} triggerClassName="btn btn-success" size="sm" title="Novo pedido" description="O pedido começa como rascunho; adicione os itens na próxima tela.">

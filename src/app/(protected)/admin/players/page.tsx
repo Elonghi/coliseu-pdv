@@ -2,6 +2,7 @@ import Link from "next/link";
 import { HandCoins, History, Pencil, Plus, UserRound, Users } from "lucide-react";
 import { ActionForm } from "@/components/action-form";
 import { FilterBar, SearchField } from "@/components/filter-bar";
+import { MaskedInput } from "@/components/masked-input";
 import { Modal } from "@/components/modal";
 import { Badge, Chips, DateTimeCell, EmptyState, PageHeader, StatCard, Tabs } from "@/components/ui";
 import { pool } from "@/db";
@@ -20,7 +21,7 @@ function PlayerFields({ player }: { player?: Player }) {
     {player && <input type="hidden" name="id" value={player.id}/>}
     <label className="label">Nome<input className="field" name="name" defaultValue={player?.name} required/></label>
     <label className="label">E-mail<input className="field" type="email" name="email" defaultValue={player?.email ?? ""}/></label>
-    <label className="label">Telefone<input className="field" name="phone" inputMode="tel" defaultValue={player?.phone ?? ""}/></label>
+    <label className="label">Telefone<MaskedInput kind="phone" name="phone" defaultValue={player?.phone}/></label>
     {player && <label className="label">Status<select className="field" name="active" defaultValue={String(player.active)}><option value="true">Ativo</option><option value="false">Inativo</option></select></label>}
     <label className="label sm:col-span-2">Observações<input className="field" name="notes" defaultValue={player?.notes ?? ""}/></label>
   </>;

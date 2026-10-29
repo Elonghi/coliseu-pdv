@@ -3,8 +3,16 @@ import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
 
 export async function createSupplier(input: unknown, userId: string) {
-  const parsed = z.object({ name:z.string().trim().min(2).max(180), document:z.string().regex(/^\d{14}$/).optional().or(z.literal("")), email:z.string().email().optional().or(z.literal("")), phone:z.string().trim().max(40).optional() }).parse(input);
-  const result = await pool.query<{id:string}>("INSERT INTO suppliers(name,document,email,phone) VALUES ($1,$2,$3,$4) RETURNING id", [parsed.name, parsed.document || null, parsed.email || null, parsed.phone || null]);
+  const parsed = z.object({
+    name:z.string().trim().min(2,"Informe o nome do fornecedor (mínimo de 2 letras).").max(180,"O nome pode ter no máximo 180 caracteres."),
+    document:z.string().regex(/^\d{14}$/,"O CNPJ deve ter 14 dígitos (ou deixe em branco).").optional().or(z.literal("")),
+    email:z.string().email("Informe um e-mail válido.").optional().or(z.literal("")),
+    phone:z.string().trim().max(40,"O telefone pode ter no máximo 40 caracteres.").optional(),
+  }).parse(input);
+  const result = await pool.query<{id:string}>("INSERT INTO suppliers(name,document,email,phone) VALUES ($1,$2,$3,$4) RETURNING id", [parsed.name, parsed.document || null, parsed.email || null, parsed.phone || null]).catch((error: { code?: string }) => {
+    if (error.code === "23505") throw new AppError("Já existe um fornecedor cadastrado com este CNPJ.", 409);
+    throw error;
+  });
   await pool.query("INSERT INTO audit_logs(user_id,action,entity_type,entity_id,after) VALUES ($1,'SUPPLIER_CREATE','supplier',$2,$3)", [userId,result.rows[0].id,JSON.stringify(parsed)]);
   return result.rows[0].id;
 }
