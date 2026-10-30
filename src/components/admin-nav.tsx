@@ -8,6 +8,7 @@ import { logoutAction } from "@/modules/auth/actions";
 import type { Permission } from "@/modules/auth/permissions";
 import type { SessionUser } from "@/modules/auth/session";
 import { adminNavigationGroups as groups } from "@/components/admin-navigation";
+import { InstallAppButton } from "@/components/pwa";
 
 export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
   user: SessionUser;
@@ -79,6 +80,7 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
         <span className="admin-avatar">{user.name.slice(0, 1).toUpperCase()}</span>
         <div><strong>{user.name}</strong><small>{user.role === "ADMIN" ? "Administrador" : "Operador"}</small></div>
       </div>
+      <InstallAppButton className="admin-install"/>
       <div className="admin-quick-actions">
         <Link href="/pdv" className="admin-pdv-link" title="Abrir PDV"><ShoppingBag size={17}/><span>Abrir PDV</span></Link>
         <form action={logoutAction}><button type="submit" title="Sair"><LogOut size={17}/><span>Sair</span></button></form>

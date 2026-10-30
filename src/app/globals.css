@@ -367,6 +367,8 @@ body:has(dialog[open]) { overflow: hidden; }
 .admin-user > div { min-width: 0; display: grid; }
 .admin-user strong { overflow: hidden; color: white; font-size: .79rem; text-overflow: ellipsis; white-space: nowrap; }
 .admin-user small { color: #8999ae; font-size: .67rem; }
+.admin-install { width: 100%; height: 35px; display: flex; align-items: center; justify-content: center; gap: .42rem; border: 1px solid rgb(255 255 255 / .1); border-radius: 8px; color: #7ee2b0; background: rgb(255 255 255 / .05); font-size: .73rem; font-weight: 750; cursor: pointer; }
+.admin-install:hover { background: rgb(255 255 255 / .1); }
 .admin-quick-actions { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
 .admin-quick-actions a, .admin-quick-actions button { width: 100%; height: 35px; display: flex; align-items: center; justify-content: center; gap: .42rem; border: 1px solid rgb(255 255 255 / .1); border-radius: 8px; color: white; background: rgb(255 255 255 / .07); font-size: .73rem; font-weight: 750; text-decoration: none; cursor: pointer; }
 .admin-quick-actions .admin-pdv-link { color: white; border-color: transparent; background: #12b76a; }
@@ -376,7 +378,7 @@ body:has(dialog[open]) { overflow: hidden; }
 .admin-content > .grid { grid-template-columns: minmax(0, 1fr); }
 
 .admin-sidebar.is-collapsed .admin-brand { justify-content: center; padding-inline: 0; }
-.admin-sidebar.is-collapsed .admin-brand-copy, .admin-sidebar.is-collapsed .admin-nav-group-toggle, .admin-sidebar.is-collapsed .admin-nav-link span, .admin-sidebar.is-collapsed .admin-user > div, .admin-sidebar.is-collapsed .admin-quick-actions span { display: none; }
+.admin-sidebar.is-collapsed .admin-brand-copy, .admin-sidebar.is-collapsed .admin-nav-group-toggle, .admin-sidebar.is-collapsed .admin-nav-link span, .admin-sidebar.is-collapsed .admin-user > div, .admin-sidebar.is-collapsed .admin-quick-actions span, .admin-sidebar.is-collapsed .admin-install span { display: none; }
 .admin-sidebar.is-collapsed .admin-collapse-button, .admin-sidebar.is-collapsed .admin-nav-link { justify-content: center; padding-inline: 0; }
 .admin-sidebar.is-collapsed .admin-user { justify-content: center; }
 .admin-sidebar.is-collapsed .admin-quick-actions { grid-template-columns: 1fr; }
@@ -416,7 +418,7 @@ body:has(dialog[open]) { overflow: hidden; }
   .admin-sidebar, .admin-sidebar.is-collapsed { position: fixed; inset: 0 auto 0 0; z-index: 60; width: min(86vw, 290px); height: 100dvh; transform: translateX(-102%); box-shadow: var(--shadow-lg); transition: transform .22s ease; }
   .admin-sidebar.is-open { transform: translateX(0); }
   .admin-sidebar.is-collapsed .admin-brand { justify-content: flex-start; padding-inline: 17px; }
-  .admin-sidebar.is-collapsed .admin-brand-copy, .admin-sidebar.is-collapsed .admin-nav-group-toggle, .admin-sidebar.is-collapsed .admin-nav-link span, .admin-sidebar.is-collapsed .admin-user > div, .admin-sidebar.is-collapsed .admin-quick-actions span { display: initial; }
+  .admin-sidebar.is-collapsed .admin-brand-copy, .admin-sidebar.is-collapsed .admin-nav-group-toggle, .admin-sidebar.is-collapsed .admin-nav-link span, .admin-sidebar.is-collapsed .admin-user > div, .admin-sidebar.is-collapsed .admin-quick-actions span, .admin-sidebar.is-collapsed .admin-install span { display: initial; }
   .admin-sidebar.is-collapsed .admin-nav-group-toggle { display: flex; }
   .admin-sidebar.is-collapsed .admin-nav-link { justify-content: flex-start; padding-inline: 10px; }
   .admin-sidebar.is-collapsed .admin-user { justify-content: flex-start; }

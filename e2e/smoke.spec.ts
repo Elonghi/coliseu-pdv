@@ -27,6 +27,22 @@ test.describe.serial("fluxos essenciais", () => {
     expect(imageResponse.headers()["content-type"]).toContain("image/png");
   });
 
+  test("publica manifest, ícones e página offline do PWA", async ({ page, request }) => {
+    await page.goto("/login");
+    await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#172744");
+    await expect(page.locator('link[rel="icon"]').first()).toHaveAttribute("href", /favicon|icon/);
+    await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveCount(1);
+    const manifest = await (await request.get("/manifest.webmanifest")).json();
+    expect(manifest).toMatchObject({ name: "Coliseu PDV & Gestão", display: "standalone", start_url: "/login", lang: "pt-BR" });
+    expect(manifest.icons.map((icon: { sizes: string; purpose: string }) => `${icon.sizes}:${icon.purpose}`)).toEqual(expect.arrayContaining(["192x192:any", "512x512:any", "512x512:maskable"]));
+    for (const icon of manifest.icons as { src: string }[]) expect((await request.get(icon.src)).ok()).toBeTruthy();
+    const worker = await request.get("/sw.js");
+    expect(worker.ok()).toBeTruthy();
+    expect(worker.headers()["cache-control"]).toContain("no-store");
+    expect((await request.get("/offline.html")).ok()).toBeTruthy();
+  });
+
   test("login oferece sessão persistente sem armazenar a senha", async ({ page, context }) => {
     await page.goto("/login");
     await expect(page.getByRole("heading", { name: "Bem-vindo de volta" })).toBeVisible();
