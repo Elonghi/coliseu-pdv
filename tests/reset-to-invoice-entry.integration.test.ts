@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { fullXml } from "./fixtures/fiscal";
@@ -16,9 +19,11 @@ suite("script que reabre as notas para entrada de estoque", () => {
   let createSale: typeof import("@/modules/sales/service").createSale;
   let adminId: string;
   let operatorId: string;
+  let storage: string;
+  const imageKey = "products/foto-teste.jpg";
   const config = { enabled: true, environment: "HOMOLOGATION" as const, cnpj: "98765432000199", ufCode: 35, certificateBase64: "AA==", certificatePassword: "teste", endpoint: "https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx", intervalMinutes: 60, maxBatches: 20 };
 
-  const run = (extra: string[] = [], env: Record<string, string> = {}) => execFileSync(process.execPath, [script, ...extra], { env: { ...process.env, DATABASE_URL: url!, ...env }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const run = (extra: string[] = [], env: Record<string, string> = {}) => execFileSync(process.execPath, [script, ...extra], { env: { ...process.env, DATABASE_URL: url!, STORAGE_PATH: storage, ...env }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const databaseName = () => new URL(url!).pathname.slice(1);
   const count = async (table: string) => (await pool.query<{ total: number }>(`SELECT count(*)::int total FROM ${table}`)).rows[0].total;
 
@@ -31,7 +36,7 @@ suite("script que reabre as notas para entrada de estoque", () => {
     ({ settleFinancialInstallment } = await import("@/modules/finance/service"));
     ({ createSale } = await import("@/modules/sales/service"));
   });
-  afterAll(async () => { await pool?.end(); });
+  afterAll(async () => { await pool?.end(); await rm(storage, { recursive: true, force: true }); });
 
   beforeEach(async () => {
     await pool.query("TRUNCATE audit_logs,bank_imports,cash_registers,inventory_counts,purchase_orders,suppliers,financial_settlements,financial_installments,player_credit_movements,financial_accounts,stock_movements,product_splits,payments,sale_items,sales,supplier_product_mappings,fiscal_invoice_events,fiscal_invoice_items,fiscal_invoices,fiscal_dfe_documents,fiscal_import_batches,sefaz_sync_states,players,products,categories,units,payment_methods,users RESTART IDENTITY CASCADE");
@@ -44,6 +49,10 @@ suite("script que reabre as notas para entrada de estoque", () => {
     const invoiceId = (await pool.query<{ id: string }>("SELECT id FROM fiscal_invoices LIMIT 1")).rows[0].id;
     await receiveFiscalInvoiceStock(invoiceId, adminId);
     await pool.query("UPDATE products SET active=true");
+    storage = await mkdtemp(path.join(tmpdir(), "reset-storage-"));
+    await mkdir(path.join(storage, "products"), { recursive: true });
+    await writeFile(path.join(storage, imageKey), "foto");
+    await pool.query("UPDATE products SET image_key=$1", [imageKey]);
     const installmentId = (await pool.query<{ id: string }>("SELECT id FROM financial_installments ORDER BY installment_number LIMIT 1")).rows[0].id;
     await settleFinancialInstallment({ installmentId, amountCents: 1000, methodCode: "PIX", occurredAt: "2026-10-10T10:00" }, adminId);
     const register = (await pool.query<{ id: string }>("INSERT INTO cash_registers(name) VALUES ('Caixa reset') RETURNING id")).rows[0].id;
@@ -67,6 +76,8 @@ suite("script que reabre as notas para entrada de estoque", () => {
     expect(await count("financial_settlements")).toBe(1);
     expect((await pool.query("SELECT stock_quantity FROM products")).rows[0].stock_quantity).toBe(1);
     expect((await pool.query("SELECT stock_imported_at FROM fiscal_invoice_items")).rows[0].stock_imported_at).not.toBeNull();
+    expect(await count("supplier_product_mappings")).toBe(1);
+    expect(existsSync(path.join(storage, imageKey))).toBe(true);
   });
 
   it("recusa aplicar sem a confirmação ou com o nome de banco errado", async () => {
@@ -74,6 +85,8 @@ suite("script que reabre as notas para entrada de estoque", () => {
     expect(() => run(["--apply", "--db=outro_banco"], { CONFIRM_REOPEN_INVOICES: confirmation })).toThrow(/--db=/);
     expect(() => run(["--apply"], { CONFIRM_REOPEN_INVOICES: confirmation })).toThrow(/--db=/);
     expect(await count("sales")).toBe(1);
+    expect(await count("products")).toBe(1);
+    expect(existsSync(path.join(storage, imageKey))).toBe(true);
   });
 
   it("zera o sistema, mantém as notas e permite dar entrada de novo", async () => {
@@ -81,7 +94,10 @@ suite("script que reabre as notas para entrada de estoque", () => {
     expect(output).toContain("Concluído e gravado");
 
     for (const table of ["sales", "sale_items", "payments", "cash_sessions", "cash_movements", "stock_movements", "financial_settlements", "purchase_orders", "inventory_counts", "player_credit_movements"]) expect(await count(table)).toBe(0);
-    expect((await pool.query("SELECT stock_quantity FROM products")).rows[0].stock_quantity).toBe(0);
+    expect(await count("products")).toBe(0);
+    expect(await count("supplier_product_mappings")).toBe(0);
+    expect(existsSync(path.join(storage, imageKey))).toBe(false);
+    expect(output).toContain("1 foto(s) de produto removida(s)");
     expect((await pool.query("SELECT credit_balance_cents FROM players")).rows[0].credit_balance_cents).toBe(0);
     expect((await pool.query("SELECT count(*)::int total FROM financial_installments WHERE settled_cents<>0 OR status<>'OPEN'")).rows[0].total).toBe(0);
     expect((await pool.query("SELECT status FROM financial_accounts")).rows.every((row) => row.status === "OPEN")).toBe(true);
@@ -90,8 +106,7 @@ suite("script que reabre as notas para entrada de estoque", () => {
 
     // preservados
     expect(await count("fiscal_invoices")).toBe(1);
-    expect(await count("products")).toBe(1);
-    expect(await count("supplier_product_mappings")).toBe(1);
+    expect(await count("categories")).toBeGreaterThan(0);
     expect(await count("users")).toBe(2);
     expect(await count("players")).toBe(1);
     expect(await count("suppliers")).toBe(1);
@@ -99,11 +114,13 @@ suite("script que reabre as notas para entrada de estoque", () => {
     expect(await count("payment_methods")).toBe(4);
     expect((await pool.query("SELECT count(*)::int total FROM audit_logs WHERE action='SYSTEM_REOPEN_INVOICES_FOR_ENTRY'")).rows[0].total).toBe(1);
 
-    // a nota volta a poder dar entrada, reaproveitando o produto, e a numeração das vendas recomeça
+    // a nota volta a poder dar entrada, recriando o produto (inativo, sem foto), e a numeração das vendas recomeça
     const invoiceId = (await pool.query<{ id: string }>("SELECT id FROM fiscal_invoices LIMIT 1")).rows[0].id;
     expect(await receiveFiscalInvoiceStock(invoiceId, adminId)).toEqual({ entered: 1, alreadyEntered: 0, errors: 0 });
     expect(await count("products")).toBe(1);
-    expect((await pool.query("SELECT stock_quantity FROM products")).rows[0].stock_quantity).toBe(2);
+    expect(await count("supplier_product_mappings")).toBe(1);
+    expect((await pool.query("SELECT stock_quantity,active,image_key FROM products")).rows[0]).toEqual({ stock_quantity: 2, active: false, image_key: null });
+    await pool.query("UPDATE products SET active=true");
     const register = (await pool.query<{ id: string }>("SELECT id FROM cash_registers LIMIT 1")).rows[0].id;
     await pool.query("INSERT INTO cash_sessions(register_id,operator_id,opening_amount_cents) VALUES ($1,$2,0)", [register, operatorId]);
     const product = (await pool.query<{ id: string; sale_price_cents: number }>("SELECT id,sale_price_cents FROM products LIMIT 1")).rows[0];
