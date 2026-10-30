@@ -20,7 +20,7 @@ export default function OpenGraphImage() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#344054", fontSize: 17, fontWeight: 700 }}>
             <span style={{ width: 10, height: 10, borderRadius: 999, background: "#12b76a" }}/>
-            Feito para lojas de TCG
+            Feito por lojista, para lojista
           </div>
         </div>
 
