@@ -17,7 +17,7 @@ async function login(page: Page, email: string, password: string) {
 test.describe.serial("fluxos essenciais", () => {
   test("landing publica a prévia social do WhatsApp", async ({ page, request }) => {
     await page.goto("/");
-    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute("content", /Coliseu PDV/);
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute("content", /Coliseon PDV/);
     await expect(page.locator('meta[property="og:description"]')).toHaveAttribute("content", /PDV, estoque, financeiro/);
     await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /opengraph-image/);
     const imageUrl = await page.locator('meta[property="og:image"]').getAttribute("content");
@@ -34,7 +34,7 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.locator('link[rel="icon"]').first()).toHaveAttribute("href", /favicon|icon/);
     await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveCount(1);
     const manifest = await (await request.get("/manifest.webmanifest")).json();
-    expect(manifest).toMatchObject({ name: "Coliseu PDV & Gestão", display: "standalone", start_url: "/login", lang: "pt-BR" });
+    expect(manifest).toMatchObject({ name: "Coliseon PDV & Gestão", display: "standalone", start_url: "/login", lang: "pt-BR" });
     expect(manifest.icons.map((icon: { sizes: string; purpose: string }) => `${icon.sizes}:${icon.purpose}`)).toEqual(expect.arrayContaining(["192x192:any", "512x512:any", "512x512:maskable"]));
     for (const icon of manifest.icons as { src: string }[]) expect((await request.get(icon.src)).ok()).toBeTruthy();
     const worker = await request.get("/sw.js");

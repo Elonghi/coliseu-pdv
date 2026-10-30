@@ -38,16 +38,16 @@ export const metadata: Metadata = {
   description: shareDescription,
   alternates: { canonical: "/" },
   openGraph: {
-    title: `Coliseu PDV — ${shareTitle}`,
+    title: `Coliseon PDV — ${shareTitle}`,
     description: shareDescription,
     type: "website",
     locale: "pt_BR",
     url: "/",
-    siteName: "Coliseu PDV",
+    siteName: "Coliseon PDV",
   },
   twitter: {
     card: "summary_large_image",
-    title: `Coliseu PDV — ${shareTitle}`,
+    title: `Coliseon PDV — ${shareTitle}`,
     description: shareDescription,
   },
 };
@@ -81,12 +81,12 @@ const reasons = [
 ] as const;
 
 const comparison = [
-  { topic: "Abrir uma box em boosters", usual: "Baixa manual e custo calculado na mão", coliseu: "Baixa a box, gera os boosters e rateia o custo de cada unidade" },
-  { topic: "Entrada de uma nota de compra", usual: "Digitar item por item", coliseu: "XML ou SEFAZ, com conferência: chegou, faltou ou não entra" },
-  { topic: "Crédito e dívida de jogadores", usual: "Caderno ou planilha", coliseu: "Saldo, extrato e pagamento direto no PDV" },
-  { topic: "Detalhes da carta ou do produto", usual: "Tudo no nome do produto", coliseu: "Jogo, coleção, idioma, raridade e condição em campos próprios" },
-  { topic: "Contas a pagar", usual: "Lançadas depois, quando dá", coliseu: "Geradas das duplicatas da nota, por fornecedor" },
-  { topic: "Quem alterou o quê", usual: "Ninguém sabe", coliseu: "Auditoria de cada alteração, com usuário e data" },
+  { topic: "Abrir uma box em boosters", usual: "Baixa manual e custo calculado na mão", coliseon: "Baixa a box, gera os boosters e rateia o custo de cada unidade" },
+  { topic: "Entrada de uma nota de compra", usual: "Digitar item por item", coliseon: "XML ou SEFAZ, com conferência: chegou, faltou ou não entra" },
+  { topic: "Crédito e dívida de jogadores", usual: "Caderno ou planilha", coliseon: "Saldo, extrato e pagamento direto no PDV" },
+  { topic: "Detalhes da carta ou do produto", usual: "Tudo no nome do produto", coliseon: "Jogo, coleção, idioma, raridade e condição em campos próprios" },
+  { topic: "Contas a pagar", usual: "Lançadas depois, quando dá", coliseon: "Geradas das duplicatas da nota, por fornecedor" },
+  { topic: "Quem alterou o quê", usual: "Ninguém sabe", coliseon: "Auditoria de cada alteração, com usuário e data" },
 ] as const;
 
 const tcgFeatures = [
@@ -141,9 +141,9 @@ const plans = [
 ] as const;
 
 const faqs = [
-  { question: "O Coliseu serve só para loja de TCG?", answer: "Ele foi pensado para TCG: abrir box em boosters, detalhes da carta e crédito de jogadores. O PDV, o estoque e o financeiro também funcionam para outros produtos da sua loja." },
-  { question: "Preciso de internet para usar?", answer: "Sim. As vendas e as consultas dependem de conexão. Você pode instalar o Coliseu no celular, no tablet ou no computador para abrir em tela cheia, e se a conexão cair o sistema avisa e volta sozinho quando ela retorna." },
-  { question: "Ele emite nota fiscal de venda?", answer: "Hoje o Coliseu recebe e organiza as NF-e de compra (pela SEFAZ ou por XML) para alimentar estoque e financeiro. A emissão de nota fiscal de venda não está incluída." },
+  { question: "O Coliseon serve só para loja de TCG?", answer: "Ele foi pensado para TCG: abrir box em boosters, detalhes da carta e crédito de jogadores. O PDV, o estoque e o financeiro também funcionam para outros produtos da sua loja." },
+  { question: "Preciso de internet para usar?", answer: "Sim. As vendas e as consultas dependem de conexão. Você pode instalar o Coliseon no celular, no tablet ou no computador para abrir em tela cheia, e se a conexão cair o sistema avisa e volta sozinho quando ela retorna." },
+  { question: "Ele emite nota fiscal de venda?", answer: "Hoje o Coliseon recebe e organiza as NF-e de compra (pela SEFAZ ou por XML) para alimentar estoque e financeiro. A emissão de nota fiscal de venda não está incluída." },
   { question: "Preciso de certificado digital?", answer: "Para receber as NF-e automaticamente pela SEFAZ, sim: é usado o certificado A1 do CNPJ da loja. Se preferir, você pode importar os XMLs em lote, sem certificado." },
   { question: "Meus dados ficam protegidos?", answer: "O acesso é por perfil de usuário, com autenticação em duas etapas, sessões protegidas e auditoria das alterações, para você saber quem fez o quê." },
   { question: "Como funcionam os planos e os valores?", answer: "Os planos organizam os recursos conforme a fase da sua loja. Os valores são combinados diretamente com você: fale com a gente e monte o plano que cabe na sua operação." },
@@ -209,7 +209,7 @@ function Brand({ dark = false }: { dark?: boolean }) {
         C
       </span>
       <span>
-        <strong>COLISEU</strong>
+        <strong>COLISEON</strong>
         <small>PDV & GESTÃO</small>
       </span>
     </span>
@@ -219,7 +219,7 @@ function Brand({ dark = false }: { dark?: boolean }) {
 function DashboardPreview() {
   const bars = [36, 51, 43, 69, 56, 74, 62, 88, 76, 94, 83, 100, 91, 108];
   return (
-    <div className={styles.browser} aria-label="Prévia do dashboard do Coliseu PDV">
+    <div className={styles.browser} aria-label="Prévia do dashboard do Coliseon PDV">
       <div className={styles.browserBar}>
         <span />
         <span />
@@ -367,9 +367,9 @@ export default function Home() {
       <a href="#planos" className={styles.announce}><Handshake size={15} /> Feito por lojista, para lojista · <b>Veja os planos</b> <ArrowRight size={14} /></a>
       <header className={styles.siteHeader}>
         <div className={styles.container}>
-          <Link href="/" aria-label="Coliseu PDV — início"><Brand /></Link>
+          <Link href="/" aria-label="Coliseon PDV — início"><Brand /></Link>
           <nav aria-label="Navegação principal">
-            <a href="#motivos">Por que o Coliseu</a>
+            <a href="#motivos">Por que o Coliseon</a>
             <a href="#recursos">Recursos</a>
             <a href="#diferenciais">Diferenciais</a>
             <a href="#planos">Planos</a>
@@ -387,7 +387,7 @@ export default function Home() {
             <p>Caixa que fecha, estoque que bate e mês que termina sem susto. Venda, compre, confira a nota e acompanhe o financeiro em um sistema que entende a rotina da sua loja.</p>
             <div className={styles.heroActions}>
               <a href="#planos" className={styles.primaryCta}>Ver os planos <ArrowRight size={18} /></a>
-              <a href="#motivos" className={styles.secondaryCta}>Por que o Coliseu</a>
+              <a href="#motivos" className={styles.secondaryCta}>Por que o Coliseon</a>
             </div>
             <div className={styles.heroChecks}>
               <span><Check size={15} /> Sem planilhas</span>
@@ -415,7 +415,7 @@ export default function Home() {
           <div className={styles.sectionHeading}>
             <span className={styles.sectionTag}>VOCÊ JÁ PASSOU POR ISSO?</span>
             <h2 id="ganchos">Todo lojista conhece essas dores.</h2>
-            <p>Foram elas que moldaram o Coliseu. Cada uma tem uma resposta pronta dentro do sistema.</p>
+            <p>Foram elas que moldaram o Coliseon. Cada uma tem uma resposta pronta dentro do sistema.</p>
           </div>
           <div className={styles.hookGrid}>
             {hooks.map(({ icon: Icon, question, answer }) => (
@@ -434,7 +434,7 @@ export default function Home() {
           <div className={styles.storyCopy}>
             <span className={styles.storyTag}><Handshake size={14} /> DE LOJISTA PARA LOJISTA</span>
             <h2 id="lojista">Quem vive o balcão sabe o que a loja precisa.</h2>
-            <p>O Coliseu não nasceu em uma sala de reunião. Ele nasceu da rotina de quem vende, compra, confere mercadoria e fecha o mês. Por isso cada recurso resolve um problema real de loja, e cada tela fala a sua língua.</p>
+            <p>O Coliseon não nasceu em uma sala de reunião. Ele nasceu da rotina de quem vende, compra, confere mercadoria e fecha o mês. Por isso cada recurso resolve um problema real de loja, e cada tela fala a sua língua.</p>
             <Link href="#planos" className={styles.lightCta}>Conhecer os planos <ArrowRight size={18} /></Link>
           </div>
           <div className={styles.principles}>
@@ -449,7 +449,7 @@ export default function Home() {
         <div className={styles.container}>
           <div className={styles.sectionHeading}>
             <span className={styles.sectionTag}>MOTIVOS PARA ESCOLHER</span>
-            <h2 id="motivos-titulo">Por que lojistas escolhem o Coliseu.</h2>
+            <h2 id="motivos-titulo">Por que lojistas escolhem o Coliseon.</h2>
             <p>Menos tempo digitando e conferindo, mais tempo vendendo e atendendo o seu cliente.</p>
           </div>
           <div className={styles.reasonGrid}>
@@ -469,7 +469,7 @@ export default function Home() {
           <div>
             <span className={styles.sectionTag}>MENOS IMPROVISO</span>
             <h2>Sua loja cresceu.<br />A gestão precisa acompanhar.</h2>
-            <p>Quando cada área vive em uma planilha, pequenos erros viram prejuízo. O Coliseu conecta toda a operação e mantém o histórico no lugar certo.</p>
+            <p>Quando cada área vive em uma planilha, pequenos erros viram prejuízo. O Coliseon conecta toda a operação e mantém o histórico no lugar certo.</p>
           </div>
           <div className={styles.painList}>
             {pains.map((pain) => <div key={pain}><span>×</span><p>{pain}</p><CircleCheck size={21} /></div>)}
@@ -503,13 +503,13 @@ export default function Home() {
             <h2 id="diferenciais-titulo">O que muda no seu dia a dia.</h2>
             <p>A rotina que você já conhece, resolvida do jeito que uma loja de TCG realmente trabalha.</p>
           </div>
-          <div className={styles.diffTable} role="table" aria-label="Comparação entre a rotina comum e o Coliseu">
-            <div className={styles.diffHead} role="row"><span role="columnheader">Na rotina</span><span role="columnheader">Como costuma ser</span><span role="columnheader">No Coliseu</span></div>
+          <div className={styles.diffTable} role="table" aria-label="Comparação entre a rotina comum e o Coliseon">
+            <div className={styles.diffHead} role="row"><span role="columnheader">Na rotina</span><span role="columnheader">Como costuma ser</span><span role="columnheader">No Coliseon</span></div>
             {comparison.map((row) => (
               <div className={styles.diffRow} role="row" key={row.topic}>
                 <b role="cell">{row.topic}</b>
                 <p role="cell"><CircleX size={16} /> {row.usual}</p>
-                <p role="cell"><CircleCheck size={16} /> {row.coliseu}</p>
+                <p role="cell"><CircleCheck size={16} /> {row.coliseon}</p>
               </div>
             ))}
           </div>
@@ -569,7 +569,7 @@ export default function Home() {
           <div className={styles.specialHead}>
             <div className={styles.specialIcon}><PackageOpen /></div>
             <div><span className={styles.sectionTag}>FEITO PARA TCG</span><h2 id="tcg">Abra boxes. Venda boosters. Mantenha o custo correto.</h2></div>
-            <p>O Coliseu transforma produtos lacrados em unidades avulsas, baixa a quantidade exata do estoque e rateia automaticamente o custo de cada booster.</p>
+            <p>O Coliseon transforma produtos lacrados em unidades avulsas, baixa a quantidade exata do estoque e rateia automaticamente o custo de cada booster.</p>
           </div>
           <div className={styles.tcgGrid}>
             {tcgFeatures.map(({ icon: Icon, title, text }) => (
@@ -592,7 +592,7 @@ export default function Home() {
                 {plan.featured && <span className={styles.planBadge}><Sparkles size={12} /> Recomendado</span>}
                 <h3>{plan.name}</h3>
                 <p className={styles.planAudience}>{plan.audience}</p>
-                <div className={styles.planPrice}><strong>Valor sob consulta</strong><small>{contact ? "Fale com a gente e monte o plano da sua loja" : "Condições combinadas diretamente com a equipe do Coliseu"}</small></div>
+                <div className={styles.planPrice}><strong>Valor sob consulta</strong><small>{contact ? "Fale com a gente e monte o plano da sua loja" : "Condições combinadas diretamente com a equipe do Coliseon"}</small></div>
                 {contact && <a href={contact} className={plan.featured ? styles.primaryCta : styles.secondaryCta} {...external}>Falar sobre este plano <ArrowRight size={16} /></a>}
                 <ul>{plan.features.map((feature) => <li key={feature}><Check size={16} />{feature}</li>)}</ul>
               </article>
@@ -607,7 +607,7 @@ export default function Home() {
           <div>
             <span className={styles.sectionTag}>PERGUNTAS FREQUENTES</span>
             <h2 id="faq-titulo">Dúvidas comuns antes de começar.</h2>
-            <p>Respostas diretas, inclusive sobre o que o Coliseu ainda não faz.</p>
+            <p>Respostas diretas, inclusive sobre o que o Coliseon ainda não faz.</p>
           </div>
           <div className={styles.faqList}>
             {faqs.map((item) => (
@@ -629,7 +629,7 @@ export default function Home() {
           </div>
           <div className={styles.finalActions}>
             {contact && <a href={contact} className={styles.lightCta} {...external}><MessageCircle size={18} /> Falar com a gente</a>}
-            <Link href="/login" className={contact ? styles.ghostCta : styles.lightCta}>{contact ? "Já sou cliente" : "Acessar o Coliseu"} <ArrowRight size={18} /></Link>
+            <Link href="/login" className={contact ? styles.ghostCta : styles.lightCta}>{contact ? "Já sou cliente" : "Acessar o Coliseon"} <ArrowRight size={18} /></Link>
           </div>
         </div>
       </section>
@@ -639,7 +639,7 @@ export default function Home() {
           <Brand dark />
           <p>Feito por lojista, para lojista.</p>
           <nav aria-label="Rodapé"><a href="#planos">Planos</a><a href="#perguntas">Perguntas</a><Link href="/login">Acessar</Link></nav>
-          <span>© 2026 Coliseu PDV</span>
+          <span>© 2026 Coliseon PDV</span>
         </div>
       </footer>
     </main>

@@ -3,8 +3,8 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Coliseu PDV & Gestão",
-    short_name: "Coliseu",
+    name: "Coliseon PDV & Gestão",
+    short_name: "Coliseon",
     description: "Frente de caixa e gestão completa para lojas de TCG.",
     lang: "pt-BR",
     dir: "ltr",

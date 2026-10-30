@@ -54,6 +54,7 @@
 .dashboardShell { min-height: 363px; display: grid; grid-template-columns: 106px 1fr; }
 .previewNav { padding: 15px 11px; background: #142440; color: #bfcbdd; }
 .previewNav .brand { transform: scale(.65); transform-origin: left top; width: 150px; }
+.previewNav .brand strong, .appTopbar .brand strong { letter-spacing: .1em; }
 .previewNavGroup { display: grid; gap: 7px; margin-top: 17px; font-size: 7px; }
 .previewNavGroup small { color: #667691; font-size: 5px; font-weight: 800; letter-spacing: .12em; }
 .previewNavGroup b { display: flex; align-items: center; gap: 4px; margin-left: -5px; padding: 6px; border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; }

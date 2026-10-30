@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Coliseu PDV — gestão completa para lojas de TCG";
+export const alt = "Coliseon PDV — gestão completa para lojas de TCG";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -14,7 +14,7 @@ export default function OpenGraphImage() {
           <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
             <div style={{ width: 66, height: 66, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 14, background: "#172744", color: "#ffffff", fontSize: 34, fontWeight: 800 }}>C</div>
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <span style={{ color: "#12a965", fontSize: 18, fontWeight: 800, letterSpacing: 5 }}>COLISEU</span>
+              <span style={{ color: "#12a965", fontSize: 18, fontWeight: 800, letterSpacing: 5 }}>COLISEON</span>
               <span style={{ color: "#667085", fontSize: 18, fontWeight: 700 }}>PDV &amp; GESTÃO</span>
             </div>
           </div>

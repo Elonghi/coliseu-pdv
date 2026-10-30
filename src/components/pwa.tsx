@@ -41,7 +41,7 @@ export function InstallAppButton({ className = "btn btn-ghost" }: { className?: 
     <ol className="grid gap-3 text-sm">
       <li>1. Toque em <b>Compartilhar</b> <Share size={15} className="inline"/> na barra do Safari.</li>
       <li>2. Escolha <b>Adicionar à Tela de Início</b>.</li>
-      <li>3. Confirme em <b>Adicionar</b>. O Coliseu passa a abrir em tela cheia, como um aplicativo.</li>
+      <li>3. Confirme em <b>Adicionar</b>. O Coliseon passa a abrir em tela cheia, como um aplicativo.</li>
     </ol>
   </Modal>;
 }

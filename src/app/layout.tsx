@@ -6,10 +6,10 @@ const appUrl = process.env.APP_URL?.trim() || "http://localhost:3000";
 
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl),
-  title: { default: "Coliseu PDV", template: "%s | Coliseu PDV" },
+  title: { default: "Coliseon PDV", template: "%s | Coliseon PDV" },
   description: "Frente de loja e gestão completa para lojas de TCG.",
-  applicationName: "Coliseu PDV",
-  appleWebApp: { capable: true, title: "Coliseu", statusBarStyle: "default" },
+  applicationName: "Coliseon PDV",
+  appleWebApp: { capable: true, title: "Coliseon", statusBarStyle: "default" },
   formatDetection: { telephone: false },
 };
 export const viewport: Viewport = { themeColor: "#172744", colorScheme: "light" };

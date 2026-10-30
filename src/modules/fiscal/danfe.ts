@@ -104,7 +104,7 @@ function box(doc: PDFKit.PDFDocument, x: number, y: number, width: number, heigh
   doc.font(options?.bold ? "Helvetica-Bold" : "Helvetica").fontSize(options?.size ?? 7.2).fillColor(colors.ink).text(value, x + 3, y + 11, { width: width - 6, height: height - 12, align: options?.align ?? "left", ellipsis: true });
 }
 function pageFooter(doc: PDFKit.PDFDocument, page: number) {
-  doc.font("Helvetica").fontSize(5.5).fillColor(colors.muted).text(`DANFE gerado pelo sistema Coliseu PDV · Pagina ${page}`, PAGE.margin, PAGE.height - 16, { width: PAGE.width - PAGE.margin * 2, align: "center", lineBreak: false });
+  doc.font("Helvetica").fontSize(5.5).fillColor(colors.muted).text(`DANFE gerado pelo sistema Coliseon PDV · Pagina ${page}`, PAGE.margin, PAGE.height - 16, { width: PAGE.width - PAGE.margin * 2, align: "center", lineBreak: false });
 }
 
 async function barcode(accessKey: string) {

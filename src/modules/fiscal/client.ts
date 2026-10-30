@@ -70,7 +70,7 @@ async function soapRequest(config: SefazConfig, body: string) {
       headers: {
         "Content-Type": "application/soap+xml; charset=utf-8; action=\"http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse\"",
         "Content-Length": Buffer.byteLength(body),
-        "User-Agent": "Coliseu-PDV/1.0",
+        "User-Agent": "Coliseon-PDV/1.0",
       },
     }, (response) => {
       const chunks: Buffer[] = [];

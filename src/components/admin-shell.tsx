@@ -38,7 +38,7 @@ export function AdminShell({ user, children }: { user: SessionUser; children: Re
     <div className={`admin-shell ${collapsed ? "menu-collapsed" : ""}`}>
       <header className="admin-mobile-header">
         <button type="button" onClick={() => setMobileOpen(true)} aria-label="Abrir menu"><Menu size={22}/></button>
-        <div><Store size={18}/><strong>{currentLabel ?? "Coliseu Gestão"}</strong></div>
+        <div><Store size={18}/><strong>{currentLabel ?? "Coliseon Gestão"}</strong></div>
         <span className="admin-avatar">{user.name.slice(0, 1).toUpperCase()}</span>
       </header>
       {mobileOpen && <button className="admin-menu-backdrop" type="button" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}

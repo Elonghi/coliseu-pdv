@@ -1,8 +1,8 @@
-/* Coliseu PDV — service worker.
+/* Coliseon PDV — service worker.
  * Escopo deliberadamente pequeno: guarda só arquivos estáticos públicos (JS/CSS versionados e ícones)
  * e uma página offline. Nunca guarda HTML de telas, respostas de /api nem dados de vendas, clientes ou
  * fiscais: tudo que depende de login continua sempre vindo do servidor. */
-const VERSION = "coliseu-pwa-v1";
+const VERSION = "coliseon-pwa-v1";
 const STATIC_CACHE = `${VERSION}-static`;
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icons/icon-192.png", "/icons/icon-512.png"];

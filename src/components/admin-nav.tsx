@@ -46,7 +46,7 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
   return <aside className={`admin-sidebar ${collapsed ? "is-collapsed" : ""} ${mobileOpen ? "is-open" : ""}`} aria-label="Navegação principal">
     <div className="admin-brand">
       <span className="admin-brand-mark"><Store size={20}/></span>
-      <div className="admin-brand-copy"><span>COLISEU</span><strong>Gestão PDV</strong></div>
+      <div className="admin-brand-copy"><span>COLISEON</span><strong>Gestão PDV</strong></div>
       <button className="admin-mobile-close" type="button" onClick={onClose} aria-label="Fechar menu"><X size={21}/></button>
     </div>
 
