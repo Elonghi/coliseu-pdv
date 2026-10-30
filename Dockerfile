@@ -30,6 +30,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/reset-import-data.mjs ./scripts/reset-import-data.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/reset-to-invoice-entry.mjs ./scripts/reset-to-invoice-entry.mjs
 USER nextjs
 EXPOSE 3000
 CMD ["node","server.js"]

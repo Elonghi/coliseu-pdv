@@ -16,6 +16,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:reset-operational-data": "node scripts/reset-import-data.mjs",
+    "db:reset-to-invoice-entry": "node scripts/reset-to-invoice-entry.mjs",
     "sefaz:sync": "tsx src/scripts/sefaz-sync.ts",
     "sefaz:worker": "tsx src/scripts/sefaz-worker.ts",
     "test": "vitest run",
