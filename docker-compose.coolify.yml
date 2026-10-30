@@ -28,6 +28,8 @@ services:
       SEED_OPERATOR_EMAIL: ${SEED_OPERATOR_EMAIL:-operador@coliseu.local}
       SEED_OPERATOR_PASSWORD: ${SEED_OPERATOR_PASSWORD:-}
     command: ["sh", "-c", "npm run db:migrate && if [ \"$$SEED_ON_DEPLOY\" = \"true\" ]; then npm run db:seed; fi"]
+    # Não roda no deploy: aplique as migrações sob demanda com `docker compose --profile maintenance run --rm migrate`.
+    profiles: ["maintenance"]
     depends_on:
       db:
         condition: service_healthy
@@ -65,8 +67,8 @@ services:
     volumes:
       - product_storage:/app/storage
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -91,8 +93,8 @@ services:
       SEFAZ_SYNC_INTERVAL_MINUTES: ${SEFAZ_SYNC_INTERVAL_MINUTES:-60}
       SEFAZ_MAX_BATCHES_PER_SYNC: ${SEFAZ_MAX_BATCHES_PER_SYNC:-20}
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     exclude_from_hc: true
     restart: unless-stopped
 
