@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@coliseu.local";
@@ -63,6 +64,8 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.getByRole("button", { name: "Legado", exact: true })).toHaveCount(0);
     await expect(page.getByText("Faturamento — últimos 14 dias")).toBeVisible();
     await expect(page.getByText("Fluxo financeiro realizado — últimos 14 dias")).toBeVisible();
+    const { version } = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
+    await expect(page.locator(".admin-footer")).toContainText(`Versão ${version}`);
     await page.getByRole("button", { name: "Recolher menu" }).click();
     await expect(page.getByRole("button", { name: "Expandir menu" })).toBeVisible();
     await page.getByRole("button", { name: "Expandir menu" }).click();

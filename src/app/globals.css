@@ -376,6 +376,7 @@ body:has(dialog[open]) { overflow: hidden; }
 .admin-content { min-width: 0; padding: 28px clamp(20px, 3vw, 38px) 56px; }
 .admin-content > * { max-width: 1480px; margin-inline: auto; }
 .admin-content > .grid { grid-template-columns: minmax(0, 1fr); }
+.admin-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .35rem 1rem; margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: .75rem; }
 
 .admin-sidebar.is-collapsed .admin-brand { justify-content: center; padding-inline: 0; }
 .admin-sidebar.is-collapsed .admin-brand-copy, .admin-sidebar.is-collapsed .admin-nav-group-toggle, .admin-sidebar.is-collapsed .admin-nav-link span, .admin-sidebar.is-collapsed .admin-user > div, .admin-sidebar.is-collapsed .admin-quick-actions span, .admin-sidebar.is-collapsed .admin-install span { display: none; }
@@ -449,7 +450,7 @@ body:has(dialog[open]) { overflow: hidden; }
 
 @media print {
   body { background: white; }
-  .no-print, aside, .admin-mobile-header { display: none !important; }
+  .no-print, aside, .admin-mobile-header, .admin-footer { display: none !important; }
   .admin-shell { display: block; padding: 0; }
   main, .admin-content { padding: 0 !important; }
   .label-sheet { display: grid; grid-template-columns: repeat(3, 64mm); gap: 2mm; }

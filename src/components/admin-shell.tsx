@@ -10,7 +10,7 @@ import { ToastProvider } from "@/components/toast";
 
 const STORAGE_KEY = "coliseu:admin-menu-collapsed";
 
-export function AdminShell({ user, children }: { user: SessionUser; children: React.ReactNode }) {
+export function AdminShell({ user, version, children }: { user: SessionUser; version: string; children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -43,7 +43,10 @@ export function AdminShell({ user, children }: { user: SessionUser; children: Re
       </header>
       {mobileOpen && <button className="admin-menu-backdrop" type="button" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}
       <AdminNav user={user} collapsed={collapsed} mobileOpen={mobileOpen} onToggle={toggle} onClose={() => setMobileOpen(false)}/>
-      <main className="admin-content">{children}</main>
+      <main className="admin-content">
+        {children}
+        <footer className="admin-footer"><span>Coliseon · Gestão PDV</span><span title="Versão do sistema">Versão {version}</span></footer>
+      </main>
     </div>
   </ToastProvider>;
 }
