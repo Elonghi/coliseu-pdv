@@ -27,6 +27,8 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       SEED_OPERATOR_EMAIL: ${SEED_OPERATOR_EMAIL:-operador@coliseu.local}
       SEED_OPERATOR_PASSWORD: ${SEED_OPERATOR_PASSWORD:-}
+      APP_DB_ROLE: ${APP_DB_ROLE:-coliseu_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
     command: ["sh", "-c", "npm run db:migrate && if [ \"$$SEED_ON_DEPLOY\" = \"true\" ]; then npm run db:seed; fi"]
     # Não roda no deploy: aplique as migrações sob demanda com `docker compose --profile maintenance run --rm migrate`.
     profiles: ["maintenance"]

@@ -99,10 +99,14 @@ Objetivo: corrigir produto lançado na loja errada e mover saldo entre lojas da 
 Cada fase é um deploy independente e reversível. Como o deploy não roda mais as migrações, cada migração é aplicada à mão, com backup antes (`scripts/backup.sh`).
 
 **Fase 0. Preparação, sem mudar comportamento**
-- Fechar e implantar o SAE NFC-e (migração 0014).
-- Criar o papel `coliseu_app` e ajustar o compose.
-- Montar a bateria de testes de isolamento.
-- Escrever o roteiro de migração em produção.
+- Entregue:
+  - Manifesto `src/db/tenancy.ts` que classifica cada tabela (conta, compartilhável, loja ou global), com teste que falha se uma tabela nova ficar sem classificação.
+  - Script `scripts/create-app-role.mjs` (papel `coliseu_app`, sem superusuário e sem ignorar RLS), com teste de integração. O compose só repassa as variáveis ao serviço `migrate`; o app continua no usuário atual até a fase 5.
+  - Roteiro de migração em produção: `docs/RUNBOOK_MIGRACAO.md`.
+- Pendente de você:
+  - Fechar e implantar o SAE NFC-e (migração 0014), que está em andamento na sua máquina. Precisa estar na `main` antes da fase 1, para a numeração das migrations não conflitar.
+  - Rodar o ensaio do roteiro (seção 1) e criar o papel (seção 6) no seu Coolify.
+- A bateria de **isolamento** propriamente dita (conta A não lê a B) só pode existir a partir da fase 1, quando as colunas `account_id` e `store_id` passam a existir.
 
 **Fase 1. Expandir o esquema**
 - Criar as tabelas novas.

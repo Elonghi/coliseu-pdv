@@ -36,7 +36,7 @@ Para habilitar a distribuição de notas fiscais, cadastre como segredos:
 
 Não coloque o PFX ou sua senha no Git. O serviço `sefaz-worker` não publica portas e compartilha somente o banco com a aplicação. O controle por NSU evita consultas concorrentes e bloqueios por consumo indevido.
 
-Após o primeiro deploy bem-sucedido, altere `SEED_ON_DEPLOY` para `false` e faça novo deploy. Assim, migrations continuam automáticas sem redefinir senhas ou dados demonstrativos.
+Após o primeiro deploy bem-sucedido, altere `SEED_ON_DEPLOY` para `false` e faça novo deploy. Assim, senhas e dados demonstrativos não são redefinidos. Atenção: o deploy **não aplica migrations**; veja `docs/RUNBOOK_MIGRACAO.md`.
 
 ## 3. Acesso direto pelo IP
 
@@ -65,7 +65,7 @@ Agende diariamente `docker compose -f docker-compose.coolify.yml --profile maint
 
 ## 6. Verificação pós-deploy
 
-1. Confirme que `db`, `app` e `sefaz-worker` estão saudáveis e `migrate` terminou com código zero.
+1. Confirme que `db`, `app` e `sefaz-worker` estão saudáveis. O `migrate` não roda no deploy: se o código novo tem migration, aplique-a antes, conforme `docs/RUNBOOK_MIGRACAO.md`.
 2. Acesse `/api/health`; deve retornar `status: ok` e `database: ok`.
 3. Entre com o administrador configurado no seed.
 4. Faça uma venda de teste, confirme a baixa de estoque e o dashboard.
@@ -76,5 +76,5 @@ Agende diariamente `docker compose -f docker-compose.coolify.yml --profile maint
 
 - Não altere a versão principal do PostgreSQL sem backup e procedimento de upgrade.
 - Não apague os volumes ao recriar componentes.
-- Deploys futuros aplicam migrations antes de liberar a nova aplicação.
-- Se o health check falhar, confira primeiro os logs de `migrate`, `db` e `app`.
+- Deploys não aplicam migrations (o serviço `migrate` fica no perfil `maintenance`). Aplique-as manualmente, com backup, antes de subir código que dependa delas.
+- Se o health check falhar, confira primeiro os logs de `db` e `app` e se há migration pendente.
