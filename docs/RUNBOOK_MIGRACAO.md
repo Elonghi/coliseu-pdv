@@ -32,12 +32,20 @@ Sem esses três itens, não aplique a migration.
 
 ## 3. Ordem entre migration e código
 
+O push na `main` dispara o deploy, e o deploy **não aplica migrations**. Então o app novo sobe antes da migration. Se o código novo já consultar uma tabela ou coluna que ainda não existe, ele falha (por exemplo, o `/api/health` com a consulta a uma tabela nova fica indisponível e o app é marcado como não saudável) até alguém rodar a migration.
+
+Por isso, o que muda o esquema vai **em envios separados**:
+
 | Tipo | Ordem | Por quê |
 |---|---|---|
-| **Expandir** (cria tabela ou coluna, aceitando nulo) | 1. migration, 2. deploy do código | O código antigo ignora o que é novo, então os dois lados funcionam durante a troca |
+| **Expandir** (cria tabela ou coluna, aceitando nulo) | 1. envio só com a migration e o `schema.ts`, sem nenhum código que use o novo; 2. aplicar a migration; 3. envio com o código que usa | Entre os envios o app funciona igual, porque nada o usa ainda |
 | **Preencher dados** | migration ou script, com o código novo ainda desligado | Permite conferir antes de qualquer uso |
 | **Endurecer** (`NOT NULL`, chaves, unicidades) | janela curta, fora do horário de uso | Pode bloquear tabelas por alguns segundos |
-| **Contrair** (remove coluna ou tabela antiga) | 1. deploy do código que não usa mais, 2. alguns dias estável, 3. migration | Remover antes quebra o código em produção |
+| **Contrair** (remove coluna ou tabela antiga) | 1. envio do código que não usa mais, 2. alguns dias estável, 3. migration | Remover antes quebra o código em produção |
+
+Se por algum motivo código e migration forem no mesmo envio, aplique a migration **imediatamente depois** do deploy, com `/api/health` em observação, e aceite a janela de erro. Evite isso em fases de endurecer.
+
+Observação: o `migrate` automático antes do app (como era antes de 30/10) elimina essa janela, e voltar a ele é a solução definitiva depois que a causa da falha de 30/10 for resolvida. Até lá vale o procedimento acima.
 
 Aplicar a migration:
 
