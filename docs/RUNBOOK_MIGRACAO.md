@@ -4,19 +4,23 @@ Vale para qualquer migration do banco, e em especial para as fases do `docs/PLAN
 
 O deploy **não aplica migrations** (o serviço `migrate` fica no perfil `maintenance` do `docker-compose.coolify.yml`). Toda migration é aplicada à mão, com backup antes, na ordem deste roteiro.
 
-Os comandos abaixo seguem o mesmo padrão do backup que já está em `DEPLOY_COOLIFY.md` (seção 5): rodam **no servidor, na pasta do compose do recurso**.
+As migrations são aplicadas **pelo terminal do app** (container do app no Coolify, pasta `/app`), com `node scripts/migrate.mjs`. A imagem de produção não tem `tsx` nem o código-fonte, então `npm run db:migrate` **não funciona** ali. O backup e os demais comandos de manutenção rodam no servidor, na pasta do compose do recurso (padrão de `DEPLOY_COOLIFY.md`, seção 5).
+
+`node scripts/migrate.mjs` sem argumentos **só consulta**: mostra o banco, quantas migrations estão aplicadas e quais estão pendentes, e não altera nada. Com `--apply` ele aplica as pendentes, todas numa transação (se uma falhar, nenhuma é gravada). É compatível com o migrador do Drizzle: usa a mesma tabela e os mesmos hashes.
 
 ## 1. Ensaio inicial (fazer uma vez, antes da fase 1)
 
 Objetivo: provar que o procedimento funciona no seu Coolify sem nenhuma migration pendente, para não descobrir o problema no meio de uma fase.
 
+No terminal do app:
+
 ```bash
-docker compose -f docker-compose.coolify.yml --profile maintenance run --rm migrate npm run db:migrate
+node scripts/migrate.mjs
 ```
 
-- **Esperado:** termina com `Migrations aplicadas.` e código de saída 0, sem alterar nada, porque não há migration pendente.
-- **Se falhar:** o erro aparece na própria saída do comando. Provavelmente é o mesmo problema que derrubou o deploy em 30/10, e precisa ser resolvido antes da fase 1. Guarde a mensagem (sem senhas nem URL de conexão).
-- **Confirme também** que `SEED_ON_DEPLOY` está `false` no Coolify. O comando acima não semeia, mas o `run --rm migrate` sem argumentos semearia se estivesse `true`.
+- **Esperado:** mostra `Banco: <host>/<nome>`, a contagem de migrations e a lista de pendentes (ou `Nenhuma migration pendente.`), sem alterar nada.
+- **Se falhar:** o erro aparece na própria saída, em geral conexão com o banco. É preciso resolver antes da fase 1. Guarde a mensagem (sem senhas nem URL de conexão).
+- **Confirme também** que `SEED_ON_DEPLOY` está `false` no Coolify.
 
 ## 2. Backup (sempre, antes de aplicar)
 
@@ -47,15 +51,17 @@ Se por algum motivo código e migration forem no mesmo envio, aplique a migratio
 
 Observação: o `migrate` automático antes do app (como era antes de 30/10) elimina essa janela, e voltar a ele é a solução definitiva depois que a causa da falha de 30/10 for resolvida. Até lá vale o procedimento acima.
 
-Aplicar a migration:
+Aplicar a migration, no terminal do app, depois do backup:
 
 ```bash
-docker compose -f docker-compose.coolify.yml --profile maintenance run --rm migrate npm run db:migrate
+node scripts/migrate.mjs --apply
 ```
+
+Alternativa pelo servidor, com o serviço `migrate` do compose (precisa do `tsx`, que só existe nesse serviço): `docker compose -f docker-compose.coolify.yml --profile maintenance run --rm migrate npm run db:migrate`.
 
 ## 4. Conferência depois de migrar
 
-1. A saída terminou com `Migrations aplicadas.`
+1. A saída listou `aplicada: <nome>` para cada migration e terminou com `Migrations aplicadas.` Rodar `node scripts/migrate.mjs` de novo deve dizer `Nenhuma migration pendente.`
 2. `/api/health` retorna `status: ok` e `database: ok`.
 3. O número de linhas em `drizzle.__drizzle_migrations` é igual ao número de migrations em `drizzle/meta/_journal.json`.
 4. Venda de teste, entrada de nota e dashboard funcionando.
@@ -90,7 +96,7 @@ O script pode ser repetido: recria os privilégios e troca a senha. Rode-o sempr
 
 - **Uma fase por vez**, com conferência entre elas.
 - **Scripts de reset** (`reset-import-data.mjs` e `reset-to-invoice-entry.mjs`) apagam dados de todas as lojas e contas. Não rode depois da fase 2, sem antes ficarem restritos por conta e por loja (obrigatório antes da fase 6).
-- **`SEED_ON_DEPLOY` não tem mais efeito no deploy.** Para criar o primeiro administrador num banco novo, rode o seed manualmente: `docker compose -f docker-compose.coolify.yml --profile maintenance run --rm migrate sh -c "npm run db:migrate && npm run db:seed"`, com as senhas de seed definidas no Coolify.
+- **`SEED_ON_DEPLOY` não tem mais efeito no deploy.** Para criar o primeiro administrador num banco novo, aplique as migrations no terminal do app e rode o seed pelo serviço `migrate` (que tem `tsx`): `docker compose -f docker-compose.coolify.yml --profile maintenance run --rm migrate npm run db:seed`, com as senhas de seed definidas no Coolify.
 - **Migrations aplicadas só por este roteiro.** Se alguém aplicar uma por outro caminho, registre aqui a data e o motivo.
 
 ## 8. Conferências por migration
