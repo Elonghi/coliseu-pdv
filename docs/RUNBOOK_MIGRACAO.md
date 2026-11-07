@@ -59,7 +59,7 @@ docker compose -f docker-compose.coolify.yml --profile maintenance run --rm migr
 2. `/api/health` retorna `status: ok` e `database: ok`.
 3. O número de linhas em `drizzle.__drizzle_migrations` é igual ao número de migrations em `drizzle/meta/_journal.json`.
 4. Venda de teste, entrada de nota e dashboard funcionando.
-5. Cada fase do plano acrescenta suas próprias consultas de conferência (por exemplo, na fase 2: nenhuma linha sem `account_id`). Elas serão registradas aqui quando a fase for implementada.
+5. Cada fase do plano acrescenta suas próprias consultas de conferência, registradas na seção 8.
 
 ## 5. Plano de volta
 
@@ -92,3 +92,27 @@ O script pode ser repetido: recria os privilégios e troca a senha. Rode-o sempr
 - **Scripts de reset** (`reset-import-data.mjs` e `reset-to-invoice-entry.mjs`) apagam dados de todas as lojas e contas. Não rode depois da fase 2, sem antes ficarem restritos por conta e por loja (obrigatório antes da fase 6).
 - **`SEED_ON_DEPLOY` não tem mais efeito no deploy.** Para criar o primeiro administrador num banco novo, rode o seed manualmente: `docker compose -f docker-compose.coolify.yml --profile maintenance run --rm migrate sh -c "npm run db:migrate && npm run db:seed"`, com as senhas de seed definidas no Coolify.
 - **Migrations aplicadas só por este roteiro.** Se alguém aplicar uma por outro caminho, registre aqui a data e o motivo.
+
+## 8. Conferências por migration
+
+### 0014 `multi_conta_lojas` (contas, lojas e vínculo de usuários)
+
+Cria `accounts`, `stores` e `user_stores`, acrescenta `users.account_id` e `users.is_account_owner`, e transforma a operação atual numa conta com a loja **Coliseu TCG**. O administrador ativo mais antigo vira proprietário, e todos os usuários ficam vinculados à loja. O app em produção não usa nada disso ainda, então o envio é só da migration e do `schema.ts`.
+
+Depois de aplicar, no banco:
+
+```sql
+SELECT a.name AS conta, s.name AS loja FROM accounts a JOIN stores s ON s.account_id = a.id;
+SELECT count(*) FILTER (WHERE account_id IS NULL) AS sem_conta, count(*) FILTER (WHERE is_account_owner) AS proprietarios FROM users;
+SELECT count(*) AS sem_loja FROM users u WHERE NOT EXISTS (SELECT 1 FROM user_stores us WHERE us.user_id = u.id);
+```
+
+Esperado: uma linha "Coliseu TCG / Coliseu TCG", `sem_conta = 0`, `proprietarios = 1` e `sem_loja = 0`. Confira que o proprietário é a pessoa certa; se não for, corrija com `UPDATE users SET is_account_owner = (id = '<id certo>');`.
+
+Usuários criados pelo painel depois da migration e antes do código que usa as lojas ficam sem vínculo. Para vincular, é seguro repetir:
+
+```bash
+docker compose -f docker-compose.coolify.yml --profile maintenance run --rm migrate npm run db:link-default-store
+```
+
+Volta atrás: a migration é aditiva, então redeployar o commit anterior basta. Para remover as tabelas, restaure o backup.

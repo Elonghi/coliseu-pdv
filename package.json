@@ -18,6 +18,7 @@
     "db:reset-operational-data": "node scripts/reset-import-data.mjs",
     "db:reset-to-invoice-entry": "node scripts/reset-to-invoice-entry.mjs",
     "db:create-app-role": "node scripts/create-app-role.mjs",
+    "db:link-default-store": "tsx src/scripts/link-default-store.ts",
     "sefaz:sync": "tsx src/scripts/sefaz-sync.ts",
     "sefaz:worker": "tsx src/scripts/sefaz-worker.ts",
     "test": "vitest run",

@@ -99,6 +99,13 @@
       "when": 1792508497765,
       "tag": "0013_absurd_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794023608825,
+      "tag": "0014_multi_conta_lojas",
+      "breakpoints": true
     }
   ]
 }

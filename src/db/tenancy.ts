@@ -7,6 +7,9 @@
 export type TenancyLevel = "ACCOUNT" | "SHAREABLE" | "STORE" | "GLOBAL";
 
 export const tenancy = {
+  accounts: "ACCOUNT",
+  stores: "ACCOUNT",
+  user_stores: "ACCOUNT",
   users: "ACCOUNT",
   sessions: "ACCOUNT",
   user_permissions: "ACCOUNT",

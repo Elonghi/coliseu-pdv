@@ -20,6 +20,26 @@ const timestamps = {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 };
 
+export const accounts = pgTable("accounts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 160 }).notNull(),
+  active: boolean("active").default(true).notNull(),
+  ...timestamps,
+});
+
+export const stores = pgTable("stores", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  name: varchar("name", { length: 160 }).notNull(),
+  cnpj: varchar("cnpj", { length: 14 }),
+  active: boolean("active").default(true).notNull(),
+  ...timestamps,
+}, (t) => [
+  uniqueIndex("stores_account_name_lower_uidx").on(t.accountId, sql`lower(${t.name})`),
+  index("stores_account_idx").on(t.accountId),
+  check("stores_cnpj_format", sql`${t.cnpj} IS NULL OR ${t.cnpj} ~ '^[A-Z0-9]{14}$'`),
+]);
+
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: varchar("name", { length: 120 }).notNull(),
@@ -30,10 +50,13 @@ export const users = pgTable("users", {
   interfaceMode: varchar("interface_mode", { length: 12 }).default("LEGACY").notNull(),
   totpSecretEncrypted: text("totp_secret_encrypted"),
   totpEnabled: boolean("totp_enabled").default(false).notNull(),
+  accountId: uuid("account_id").references(() => accounts.id, { onDelete: "restrict" }),
+  isAccountOwner: boolean("is_account_owner").default(false).notNull(),
   ...timestamps,
 }, (t) => [
   uniqueIndex("users_email_lower_uidx").on(sql`lower(${t.email})`),
   index("users_role_active_idx").on(t.role, t.active),
+  index("users_account_idx").on(t.accountId),
   check("users_interface_mode_valid", sql`${t.interfaceMode} IN ('LEGACY', 'MODERN')`),
 ]);
 
@@ -58,6 +81,12 @@ export const userPermissions = pgTable("user_permissions", {
   permission: varchar("permission", { length: 60 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [uniqueIndex("user_permissions_user_permission_uidx").on(t.userId, t.permission), index("user_permissions_user_idx").on(t.userId)]);
+
+export const userStores = pgTable("user_stores", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  storeId: uuid("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [uniqueIndex("user_stores_user_store_uidx").on(t.userId, t.storeId), index("user_stores_store_idx").on(t.storeId)]);
 
 export const products = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
