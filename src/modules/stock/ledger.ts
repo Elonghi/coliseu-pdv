@@ -1,5 +1,7 @@
 import type { PoolClient } from "pg";
-import { AppError } from "@/lib/errors";
+import { requireActiveStore } from "@/modules/stores/context";
+
+export { enterStore, requireActiveStore } from "@/modules/stores/context";
 
 type Queryable = Pick<PoolClient, "query">;
 export type StockLevel = { quantity: number; costCents: number };
@@ -15,20 +17,6 @@ export const stockQuantitySql = (alias = "p") =>
 /** Custo médio nas lojas que a requisição enxerga (ponderado pelo saldo); sem saldo, o custo de referência do catálogo. */
 export const stockCostSql = (alias = "p") =>
   `COALESCE((SELECT round(sum(ps.cost_cents::numeric*ps.quantity)/NULLIF(sum(ps.quantity),0)) FROM product_stock ps WHERE ps.product_id=${alias}.id AND ps.store_id=ANY(app_store_ids())),${alias}.cost_cents)::int`;
-
-export async function requireActiveStore(client: Queryable): Promise<string> {
-  const id = (await client.query<{ id: string | null }>("SELECT app_current_store() AS id")).rows[0].id;
-  if (!id) throw new AppError("Escolha uma loja específica no seletor de lojas para movimentar o estoque.", 409, "STORE_REQUIRED");
-  return id;
-}
-
-/** Faz o resto da transação valer para a loja de uma operação que já pertence a uma (venda, nota, inventário, pedido).
- * Só vale para loja que a requisição enxerga, e só até o fim da transação: nada fica na conexão. Use depois do BEGIN. */
-export async function enterStore(client: Queryable, storeId: string) {
-  const visible = (await client.query<{ ok: boolean }>("SELECT $1::uuid = ANY(app_store_ids()) AS ok", [storeId])).rows[0].ok;
-  if (!visible) throw new AppError("Esta operação pertence a uma loja que você não está vendo. Escolha a loja no seletor de lojas.", 409, "STORE_MISMATCH");
-  await client.query("SELECT set_config('app.store_id',$1,true)", [storeId]);
-}
 
 /** Trava as linhas dos produtos, em ordem para não travar em ciclo. Tem de ser uma instrução à parte, ANTES de ler o saldo:
  * o saldo está em product_stock, que a trava da linha do produto não cobre. Lido na mesma instrução, em READ COMMITTED,

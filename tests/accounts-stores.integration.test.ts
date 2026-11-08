@@ -11,8 +11,17 @@ suite("contas, lojas e vínculo de usuários", () => {
   let db: pg.Client;
   const backfill = async () => { for (const statement of defaultStoreBackfill) await db.query(statement); };
   const count = async (table: string) => (await db.query<{ total: number }>(`SELECT count(*)::int total FROM ${table}`)).rows[0].total;
-  const addUser = async (email: string, role: "ADMIN" | "OPERATOR", createdAt: string, active = true) =>
-    (await db.query<{ id: string }>("INSERT INTO users (name,email,password_hash,role,active,created_at) VALUES ($1,$2,'x',$3,$4,$5) RETURNING id", [email, `${email}@loja.test`, role, active, createdAt])).rows[0].id;
+  const addUser = async (email: string, role: "ADMIN" | "OPERATOR", createdAt: string, active = true, account: string | null = null) =>
+    (await db.query<{ id: string }>("INSERT INTO users (name,email,password_hash,role,active,created_at,account_id,is_platform_admin) VALUES ($1,$2,'x',$3,$4,$5,$6::uuid,($6::uuid IS NULL)) RETURNING id", [email, `${email}@loja.test`, role, active, createdAt, account])).rows[0].id;
+  /* A migration 0014 ligou usuários que ainda não tinham conta. Depois do endurecimento (0017) todo usuário tem conta, salvo o
+   * administrador do sistema; para testar o vínculo inicial, a regra é suspensa só durante o teste. */
+  const withoutAccountRule = async (run: () => Promise<void>) => {
+    await db.query("ALTER TABLE users DROP CONSTRAINT users_account_required");
+    try { await run(); } finally {
+      await db.query("UPDATE users SET account_id=(SELECT id FROM accounts LIMIT 1) WHERE account_id IS NULL AND (SELECT count(*) FROM accounts)=1");
+      await db.query("ALTER TABLE users ADD CONSTRAINT users_account_required CHECK (account_id IS NOT NULL OR is_platform_admin)");
+    }
+  };
 
   beforeAll(async () => {
     if (!url || !new URL(url).pathname.toLowerCase().includes("test")) throw new Error("TEST_DATABASE_URL deve apontar para um banco com 'test' no nome.");
@@ -27,7 +36,7 @@ suite("contas, lojas e vínculo de usuários", () => {
     for (const statement of defaultStoreBackfill) expect(sql).toContain(`${statement};`);
   });
 
-  it("transforma a operação atual em uma conta com a loja Coliseu TCG e vincula todos os usuários", async () => {
+  it("transforma a operação atual em uma conta com a loja Coliseu TCG e vincula todos os usuários", () => withoutAccountRule(async () => {
     const oldInactiveAdmin = await addUser("admin-antigo-inativo", "ADMIN", "2025-01-01", false);
     const owner = await addUser("admin-ativo-antigo", "ADMIN", "2026-01-01");
     const otherAdmin = await addUser("admin-ativo-novo", "ADMIN", "2026-02-01");
@@ -45,9 +54,9 @@ suite("contas, lojas e vínculo de usuários", () => {
     expect(users.find((user) => user.id === otherAdmin)?.is_account_owner).toBe(false);
     expect(users.find((user) => user.id === operator)?.is_account_owner).toBe(false);
     expect(await count("user_stores")).toBe(4);
-  });
+  }));
 
-  it("pode ser repetido sem criar nada novo", async () => {
+  it("pode ser repetido sem criar nada novo", () => withoutAccountRule(async () => {
     await addUser("admin", "ADMIN", "2026-01-01");
     await backfill();
     const before = [await count("accounts"), await count("stores"), await count("user_stores")];
@@ -55,7 +64,7 @@ suite("contas, lojas e vínculo de usuários", () => {
     await backfill();
     expect([await count("accounts"), await count("stores"), await count("user_stores")]).toEqual(before);
     expect((await db.query("SELECT 1 FROM users WHERE is_account_owner")).rowCount).toBe(1);
-  });
+  }));
 
   it("não cria conta nem loja num banco sem usuários", async () => {
     await backfill();
@@ -80,7 +89,7 @@ suite("contas, lojas e vínculo de usuários", () => {
     await db.query("INSERT INTO stores (account_id,name) VALUES ($1,'Centro')", [accountB]);
     await expect(db.query("INSERT INTO stores (account_id,name,cnpj) VALUES ($1,'Filial','123')", [accountA])).rejects.toThrow(/stores_cnpj_format/);
 
-    const user = await addUser("operador", "OPERATOR", "2026-01-01");
+    const user = await addUser("operador", "OPERATOR", "2026-01-01", true, accountA);
     await db.query("INSERT INTO user_stores (user_id,store_id) VALUES ($1,$2)", [user, store]);
     await expect(db.query("INSERT INTO user_stores (user_id,store_id) VALUES ($1,$2)", [user, store])).rejects.toThrow(/user_stores_user_store_uidx/);
     await expect(db.query("DELETE FROM accounts WHERE id=$1", [accountA])).rejects.toThrow(/violates foreign key/);

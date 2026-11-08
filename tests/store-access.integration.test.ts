@@ -9,8 +9,10 @@ suite("acesso às lojas da conta", () => {
   let db: pg.Client;
   let accountA: string; let accountB: string;
   let centro: string; let shopping: string; let outraConta: string;
-  const user = async (email: string, options: { account?: string | null; owner?: boolean } = {}) =>
-    (await db.query<{ id: string }>("INSERT INTO users (name,email,password_hash,role,account_id,is_account_owner) VALUES ($1,$2,'x','OPERATOR',$3,$4) RETURNING id", [email, `${email}@loja.test`, options.account === undefined ? accountA : options.account, options.owner ?? false])).rows[0].id;
+  const user = async (email: string, options: { account?: string | null; owner?: boolean } = {}) => {
+    const account = options.account === undefined ? accountA : options.account;
+    return (await db.query<{ id: string }>("INSERT INTO users (name,email,password_hash,role,account_id,is_account_owner,is_platform_admin) VALUES ($1,$2,'x','OPERATOR',$3::uuid,$4,($3::uuid IS NULL)) RETURNING id", [email, `${email}@loja.test`, account, options.owner ?? false])).rows[0].id;
+  };
   const links = async (userId: string) => (await db.query<{ name: string }>("SELECT s.name FROM user_stores us JOIN stores s ON s.id=us.store_id WHERE us.user_id=$1 ORDER BY s.name", [userId])).rows.map((row) => row.name);
 
   beforeAll(async () => {

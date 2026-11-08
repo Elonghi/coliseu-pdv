@@ -34,7 +34,7 @@ export async function createSale(input: CheckoutInput, operatorId: string) {
     const totalCents = subtotalCents - discountCents;
     if (totalCents <= 0 || !Number.isSafeInteger(totalCents) || totalCents > 2_147_483_647) throw new AppError("Total da venda inválido.", 422, "INVALID_TOTAL");
     const methodCodes = parsed.payments.map((p) => p.methodCode);
-    const methods = await client.query("SELECT code FROM payment_methods WHERE code=ANY($1::text[]) AND active=true", [methodCodes]);
+    const methods = await client.query("SELECT pm.code FROM payment_methods pm JOIN store_payment_methods spm ON spm.code=pm.code AND spm.store_id=app_current_store() WHERE pm.active AND spm.active AND pm.code=ANY($1::text[])", [methodCodes]);
     if (methods.rowCount !== methodCodes.length) throw new AppError("Forma de pagamento inválida ou inativa.", 422, "INVALID_PAYMENT_METHOD");
     if (parsed.payments.reduce((sum, p) => sum + p.amountAppliedCents, 0) !== totalCents) throw new AppError("A soma dos pagamentos deve ser igual ao total da venda.", 422, "PAYMENT_MISMATCH");
     for (const payment of parsed.payments) {

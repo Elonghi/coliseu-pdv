@@ -70,7 +70,7 @@ async function resolveProduct(client: PoolClient, item: FiscalItemRow, input: Fi
     const canSplitIntoBoosters = isSplittableSealedProduct(item.description);
     const inserted = await client.query<{ id: string }>(`INSERT INTO products
       (sku,barcode,name,description,category_id,unit_id,cost_cents,sale_price_cents,max_discount_bps,stock_quantity,minimum_stock,can_split_into_boosters,active)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$7,0,0,0,$8,false) ON CONFLICT (sku) DO NOTHING RETURNING id`, [sku, ean ?? null, item.description.slice(0, 180), description, categoryId, unitId, unitCostCents, canSplitIntoBoosters]);
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$7,0,0,0,$8,false) ON CONFLICT DO NOTHING RETURNING id`, [sku, ean ?? null, item.description.slice(0, 180), description, categoryId, unitId, unitCostCents, canSplitIntoBoosters]);
     productId = inserted.rows[0]?.id;
     created = Boolean(productId);
     if (!productId) productId = (await client.query<{ id: string }>("SELECT id FROM products WHERE sku=$1", [sku])).rows[0]?.id;
@@ -79,7 +79,7 @@ async function resolveProduct(client: PoolClient, item: FiscalItemRow, input: Fi
   }
   if (isSplittableSealedProduct(item.description)) await client.query("UPDATE products SET can_split_into_boosters=true,updated_at=now() WHERE id=$1 AND is_loose_booster=false", [productId]);
   await client.query(`INSERT INTO supplier_product_mappings (supplier_document,supplier_product_code,product_id)
-    VALUES ($1,$2,$3) ON CONFLICT (supplier_document,supplier_product_code) DO NOTHING`, [supplierDocument, supplierCode, productId]);
+    VALUES ($1,$2,$3) ON CONFLICT (account_id,supplier_document,supplier_product_code) DO NOTHING`, [supplierDocument, supplierCode, productId]);
   const definitive = await client.query<{ product_id: string }>("SELECT product_id FROM supplier_product_mappings WHERE supplier_document=$1 AND supplier_product_code=$2", [supplierDocument, supplierCode]);
   return { productId: definitive.rows[0]?.product_id ?? productId, created };
 }

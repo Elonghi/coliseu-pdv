@@ -1,6 +1,6 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { storeColumnPending, tenancy } from "@/db/tenancy";
+import { tenancy } from "@/db/tenancy";
 
 const url = process.env.TEST_DATABASE_URL;
 const suite = describe.runIf(Boolean(url));
@@ -28,8 +28,8 @@ suite("colunas de conta e loja de cada tabela, conforme o manifesto", () => {
   const existing = (level: string) => Object.entries(tenancy).filter(([name, value]) => value === level && columns.has(name)).map(([name]) => name);
 
   it("toda tabela de loja tem store_id obrigatório, com padrão e chave para stores", () => {
-    const tables = existing("STORE").filter((name) => !storeColumnPending.includes(name));
-    expect(tables.length).toBeGreaterThanOrEqual(24);
+    const tables = existing("STORE");
+    expect(tables.length).toBeGreaterThanOrEqual(26);
     for (const table of tables) {
       const column = columns.get(table)!.get("store_id");
       expect(column, `${table} sem store_id`).toBeDefined();

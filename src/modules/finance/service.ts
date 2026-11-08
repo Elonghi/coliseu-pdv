@@ -4,6 +4,7 @@ import type { PoolClient } from "pg";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
 import { applyPlayerCreditMovement } from "@/modules/players/service";
+import { enterStore } from "@/modules/stores/context";
 
 const accountSchema = z.object({
   type: z.enum(["PAYABLE", "RECEIVABLE"]),
@@ -141,7 +142,9 @@ export async function settleFinancialInstallment(input: unknown, userId: string)
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const method = await client.query("SELECT code FROM payment_methods WHERE code=$1 AND active=true AND code NOT IN ('FUTURE','PLAYER_CREDIT')", [parsed.methodCode]);
+    const owner = await client.query<{ store_id: string }>("SELECT store_id FROM financial_installments WHERE id=$1", [parsed.installmentId]);
+    if (owner.rows[0]) await enterStore(client, owner.rows[0].store_id);
+    const method = await client.query("SELECT pm.code FROM payment_methods pm JOIN store_payment_methods spm ON spm.code=pm.code AND spm.store_id=app_current_store() WHERE pm.active AND spm.active AND pm.code=$1 AND pm.code NOT IN ('FUTURE','PLAYER_CREDIT')", [parsed.methodCode]);
     if (!method.rowCount) throw new AppError("Forma de pagamento inválida.");
     await createSettlement(client, parsed, userId);
     await client.query("COMMIT");
@@ -154,7 +157,10 @@ export async function settleFinancialInstallmentsBatch(input: unknown, userId: s
   const client=await pool.connect();
   try{
     await client.query("BEGIN");
-    const method=await client.query("SELECT code FROM payment_methods WHERE code=$1 AND active=true AND code NOT IN ('FUTURE','PLAYER_CREDIT')",[parsed.methodCode]);
+    const owners=await client.query<{store_id:string}>("SELECT DISTINCT store_id FROM financial_installments WHERE id=ANY($1::uuid[])",[ids]);
+    if(owners.rowCount&&owners.rowCount>1)throw new AppError("Selecione duplicatas de uma loja só para baixar em lote.",422);
+    if(owners.rows[0])await enterStore(client,owners.rows[0].store_id);
+    const method=await client.query("SELECT pm.code FROM payment_methods pm JOIN store_payment_methods spm ON spm.code=pm.code AND spm.store_id=app_current_store() WHERE pm.active AND spm.active AND pm.code=$1 AND pm.code NOT IN ('FUTURE','PLAYER_CREDIT')",[parsed.methodCode]);
     if(!method.rowCount)throw new AppError("Forma de pagamento inválida.");
     const rows=await client.query<{id:string;remaining:number;counterparty_name:string}>(`SELECT i.id,(i.amount_cents-i.settled_cents)::int remaining,a.counterparty_name FROM financial_installments i JOIN financial_accounts a ON a.id=i.account_id WHERE i.id=ANY($1::uuid[]) AND a.type='PAYABLE' AND a.fiscal_invoice_id IS NOT NULL AND i.status IN ('OPEN','PARTIAL') ORDER BY i.id`,[ids]);
     if(rows.rowCount!==ids.length)throw new AppError("Uma ou mais duplicatas não estão disponíveis para baixa.",409);

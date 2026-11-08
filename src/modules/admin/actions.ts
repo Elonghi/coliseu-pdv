@@ -16,6 +16,7 @@ import { adjustPlayerCredit, createPlayer, updatePlayer } from "@/modules/player
 import { syncSefazDfe } from "@/modules/fiscal/service";
 import { receiveFiscalInvoiceStock } from "@/modules/fiscal/stock";
 import { settleFinancialInstallment } from "@/modules/finance/service";
+import { requireActiveStore } from "@/modules/stores/context";
 
 export type ActionState = { ok?: string; error?: string };
 const message = (error: unknown) => error instanceof Error ? error.message : "Não foi possível concluir a operação.";
@@ -166,7 +167,11 @@ export async function cancelSaleAction(_: ActionState, form: FormData): Promise<
 
 export async function paymentMethodAction(form: FormData) {
   await requirePermission(permissions.CATALOG_MANAGE);
-  await pool.query("UPDATE payment_methods SET active=$1,updated_at=now() WHERE code=$2", [form.get("active") === "on", String(form.get("code"))]);
+  const client = await pool.connect();
+  try {
+    await requireActiveStore(client, "mudar as formas de pagamento");
+    await client.query("UPDATE store_payment_methods SET active=$1,updated_at=now() WHERE code=$2 AND store_id=app_current_store()", [form.get("active") === "on", String(form.get("code"))]);
+  } finally { client.release(); }
   revalidatePath("/admin/payment-methods");
 }
 

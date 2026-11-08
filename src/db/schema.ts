@@ -24,8 +24,10 @@ export const accounts = pgTable("accounts", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: varchar("name", { length: 160 }).notNull(),
   active: boolean("active").default(true).notNull(),
+  maxStores: integer("max_stores"),
+  notes: text("notes"),
   ...timestamps,
-});
+}, (t) => [check("accounts_max_stores_valid", sql`${t.maxStores} IS NULL OR ${t.maxStores} >= 1`)]);
 
 export const stores = pgTable("stores", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -50,6 +52,7 @@ export const users = pgTable("users", {
   interfaceMode: varchar("interface_mode", { length: 12 }).default("LEGACY").notNull(),
   totpSecretEncrypted: text("totp_secret_encrypted"),
   totpEnabled: boolean("totp_enabled").default(false).notNull(),
+  isPlatformAdmin: boolean("is_platform_admin").default(false).notNull(),
   accountId: uuid("account_id").default(sql`app_current_account()`).references(() => accounts.id, { onDelete: "restrict" }),
   isAccountOwner: boolean("is_account_owner").default(false).notNull(),
   ...timestamps,
@@ -58,6 +61,7 @@ export const users = pgTable("users", {
   index("users_role_active_idx").on(t.role, t.active),
   index("users_account_idx").on(t.accountId),
   check("users_interface_mode_valid", sql`${t.interfaceMode} IN ('LEGACY', 'MODERN')`),
+  check("users_account_required", sql`${t.accountId} IS NOT NULL OR ${t.isPlatformAdmin}`),
 ]);
 
 export const sessions = pgTable("sessions", {
@@ -72,7 +76,7 @@ export const categories = pgTable("categories", {
   accountId: uuid("account_id").notNull().default(sql`app_current_account()`).references(() => accounts.id, { onDelete: "restrict" }),
   storeId: uuid("store_id").references(() => stores.id, { onDelete: "restrict" }),
   id: uuid("id").defaultRandom().primaryKey(), name: varchar("name", { length: 100 }).notNull(), active: boolean("active").default(true).notNull(), ...timestamps,
-}, (t) => [index("categories_account_idx").on(t.accountId), uniqueIndex("categories_name_lower_uidx").on(sql`lower(${t.name})`), index("categories_active_idx").on(t.active)]);
+}, (t) => [index("categories_account_idx").on(t.accountId), uniqueIndex("categories_account_name_lower_uidx").on(t.accountId, sql`lower(${t.name})`), index("categories_active_idx").on(t.active)]);
 
 export const units = pgTable("units", {
   id: uuid("id").defaultRandom().primaryKey(), code: varchar("code", { length: 12 }).notNull().unique(), name: varchar("name", { length: 50 }).notNull(), active: boolean("active").default(true).notNull(), ...timestamps,
@@ -94,8 +98,8 @@ export const products = pgTable("products", {
   accountId: uuid("account_id").notNull().default(sql`app_current_account()`).references(() => accounts.id, { onDelete: "restrict" }),
   storeId: uuid("store_id").references(() => stores.id, { onDelete: "restrict" }),
   id: uuid("id").defaultRandom().primaryKey(),
-  sku: varchar("sku", { length: 60 }).notNull().unique(),
-  barcode: varchar("barcode", { length: 64 }).unique(),
+  sku: varchar("sku", { length: 60 }).notNull(),
+  barcode: varchar("barcode", { length: 64 }),
   name: varchar("name", { length: 180 }).notNull(),
   description: text("description"), imageKey: text("image_key"),
   categoryId: uuid("category_id").notNull().references(() => categories.id, { onDelete: "restrict" }),
@@ -112,7 +116,7 @@ export const products = pgTable("products", {
   tcgRarity: varchar("tcg_rarity", { length: 80 }),
   tcgCondition: varchar("tcg_condition", { length: 40 }),
   active: boolean("active").default(true).notNull(), ...timestamps,
-}, (t) => [index("products_account_idx").on(t.accountId), 
+}, (t) => [uniqueIndex("products_account_sku_uidx").on(t.accountId, t.sku), uniqueIndex("products_account_barcode_uidx").on(t.accountId, t.barcode), index("products_account_idx").on(t.accountId), 
   check("products_money_nonnegative", sql`${t.costCents} >= 0 AND ${t.salePriceCents} >= 0`),
   check("products_discount_valid", sql`${t.maxDiscountBps} BETWEEN 0 AND 10000`),
   check("products_stock_nonnegative", sql`${t.stockQuantity} >= 0 AND ${t.minimumStock} >= 0`),
@@ -142,7 +146,7 @@ export const supplierProductMappings = pgTable("supplier_product_mappings", {
   productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
   ...timestamps,
 }, (t) => [index("supplier_product_mappings_account_idx").on(t.accountId), 
-  uniqueIndex("supplier_product_mappings_supplier_code_uidx").on(t.supplierDocument, t.supplierProductCode),
+  uniqueIndex("supplier_product_mappings_account_supplier_code_uidx").on(t.accountId, t.supplierDocument, t.supplierProductCode),
   index("supplier_product_mappings_product_idx").on(t.productId),
 ]);
 
@@ -183,7 +187,7 @@ export const cashRegisters = pgTable("cash_registers", {
   name: varchar("name", { length: 80 }).notNull(),
   active: boolean("active").default(true).notNull(),
   ...timestamps,
-}, (t) => [index("cash_registers_store_idx").on(t.storeId), uniqueIndex("cash_registers_name_lower_uidx").on(sql`lower(${t.name})`), index("cash_registers_active_idx").on(t.active)]);
+}, (t) => [index("cash_registers_store_idx").on(t.storeId), uniqueIndex("cash_registers_store_name_lower_uidx").on(t.storeId, sql`lower(${t.name})`), index("cash_registers_active_idx").on(t.active)]);
 
 export const cashSessions = pgTable("cash_sessions", {
   storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
@@ -237,6 +241,15 @@ export const saleItems = pgTable("sale_items", {
 export const paymentMethods = pgTable("payment_methods", {
   code: varchar("code", { length: 30 }).primaryKey(), name: varchar("name", { length: 80 }).notNull(), active: boolean("active").default(true).notNull(), sortOrder: integer("sort_order").default(0).notNull(), ...timestamps,
 });
+
+/* Quais formas de pagamento cada loja usa. O catálogo de códigos (payment_methods) é global porque o sistema interpreta
+ * cada código (dinheiro, PIX, crédito do jogador, pagamento futuro); o que muda por loja é estar ativa ou não. */
+export const storePaymentMethods = pgTable("store_payment_methods", {
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "cascade" }),
+  code: varchar("code", { length: 30 }).notNull().references(() => paymentMethods.code, { onDelete: "cascade" }),
+  active: boolean("active").default(true).notNull(),
+  ...timestamps,
+}, (t) => [primaryKey({ columns: [t.storeId, t.code] })]);
 
 export const payments = pgTable("payments", {
   storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
@@ -375,7 +388,7 @@ export const suppliers = pgTable("suppliers", {
   phone: varchar("phone", { length: 40 }),
   active: boolean("active").default(true).notNull(),
   ...timestamps,
-}, (t) => [index("suppliers_account_idx").on(t.accountId), uniqueIndex("suppliers_document_uidx").on(t.document), index("suppliers_name_idx").on(t.name)]);
+}, (t) => [index("suppliers_account_idx").on(t.accountId), uniqueIndex("suppliers_account_document_uidx").on(t.accountId, t.document), index("suppliers_name_idx").on(t.name)]);
 
 export const purchaseOrders = pgTable("purchase_orders", {
   storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),

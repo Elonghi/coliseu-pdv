@@ -12,3 +12,10 @@ export const defaultStoreBackfill: string[] = [
   `UPDATE "users" SET "is_account_owner"=true WHERE "id"=(SELECT "id" FROM "users" WHERE "role"='ADMIN' AND "account_id" IS NOT NULL ORDER BY "active" DESC,"created_at","id" LIMIT 1) AND NOT EXISTS (SELECT 1 FROM "users" WHERE "is_account_owner")`,
   `INSERT INTO "user_stores" ("user_id","store_id") SELECT u."id",s."id" FROM "users" u JOIN "stores" s ON s."account_id"=u."account_id" ON CONFLICT DO NOTHING`,
 ];
+
+/* Instalação nova: cria a conta e a loja iniciais antes dos usuários, porque todo usuário (exceto o administrador do
+ * sistema) precisa pertencer a uma conta. Não faz nada se já existir conta ou loja. */
+export const ensureDefaultStore: string[] = [
+  `INSERT INTO "accounts" ("name") SELECT '${defaultStoreName}' WHERE NOT EXISTS (SELECT 1 FROM "accounts")`,
+  `INSERT INTO "stores" ("account_id","name") SELECT a."id",'${defaultStoreName}' FROM "accounts" a WHERE NOT EXISTS (SELECT 1 FROM "stores")`,
+];

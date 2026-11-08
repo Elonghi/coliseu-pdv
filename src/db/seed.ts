@@ -3,7 +3,7 @@ import { hash } from "bcryptjs";
 import { pool } from "./index";
 import { createSale } from "@/modules/sales/service";
 import { permissions } from "@/modules/auth/permissions";
-import { defaultStoreBackfill } from "./default-store";
+import { defaultStoreBackfill, ensureDefaultStore } from "./default-store";
 
 const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@coliseu.local").toLowerCase();
 const operatorEmail = (process.env.SEED_OPERATOR_EMAIL ?? "operador@coliseu.local").toLowerCase();
@@ -56,6 +56,7 @@ async function ensureCategory(name: string) {
 }
 
 async function main() {
+  for (const statement of ensureDefaultStore) await pool.query(statement);
   const adminId = await upsertUser("Administrador", adminEmail, adminPassword, "ADMIN");
   const operatorId = await upsertUser("Operador de Caixa", operatorEmail, operatorPassword, "OPERATOR");
   for (const statement of defaultStoreBackfill) await pool.query(statement);

@@ -5,7 +5,7 @@ import { paymentMethodAction } from "@/modules/admin/actions";
 export const dynamic = "force-dynamic";
 
 export default async function PaymentMethodsPage() {
-  const methods = await pool.query<{ code: string; name: string; active: boolean }>("SELECT code,name,active FROM payment_methods ORDER BY sort_order");
+  const methods = await pool.query<{ code: string; name: string; active: boolean }>("SELECT pm.code,pm.name,spm.active FROM payment_methods pm JOIN store_payment_methods spm ON spm.code=pm.code AND spm.store_id=app_current_store() WHERE pm.active ORDER BY pm.sort_order");
   return <div className="section-gap">
     <PageHeader eyebrow="Configurações" title="Formas de pagamento" description="Escolha quais formas de pagamento ficam disponíveis no PDV."/>
     <section className="card">
