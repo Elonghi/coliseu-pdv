@@ -8,7 +8,7 @@ import { permissionOptions, permissions } from "@/modules/auth/permissions";
 import { requirePermission } from "@/modules/auth/session";
 
 export const dynamic = "force-dynamic";
-type UserRow = { id: string; name: string; email: string; role: string; active: boolean; permissions: string[]; totp_enabled: boolean };
+type UserRow = { id: string; name: string; email: string; role: string; active: boolean; permissions: string[]; totp_enabled: boolean; is_account_owner: boolean; stores: string[] };
 
 function UserFields({ user }: { user?: UserRow }) {
   return <>
@@ -31,8 +31,9 @@ function UserFields({ user }: { user?: UserRow }) {
 }
 
 export default async function UsersPage() {
-  await requirePermission(permissions.USERS_MANAGE);
-  const users = await pool.query<UserRow>("SELECT u.id,u.name,u.email,u.role,u.active,u.totp_enabled,COALESCE(array_agg(up.permission) FILTER(WHERE up.permission IS NOT NULL),'{}') permissions FROM users u LEFT JOIN user_permissions up ON up.user_id=u.id GROUP BY u.id ORDER BY u.active DESC,u.name");
+  const actor = await requirePermission(permissions.USERS_MANAGE);
+  // Só a conta de quem está logado (usuários sem conta aparecem até o endurecimento do vínculo, fase 3 do plano multi-loja).
+  const users = await pool.query<UserRow>("SELECT u.id,u.name,u.email,u.role,u.active,u.totp_enabled,u.is_account_owner,COALESCE((SELECT array_agg(s.name ORDER BY s.name) FROM user_stores us JOIN stores s ON s.id=us.store_id WHERE us.user_id=u.id),'{}') stores,COALESCE(array_agg(up.permission) FILTER(WHERE up.permission IS NOT NULL),'{}') permissions FROM users u LEFT JOIN user_permissions up ON up.user_id=u.id WHERE ($1::uuid IS NULL OR u.account_id=$1 OR u.account_id IS NULL) GROUP BY u.id ORDER BY u.is_account_owner DESC,u.active DESC,u.name", [actor.accountId]);
   return <div className="section-gap">
     <PageHeader
       eyebrow="Acesso"
@@ -44,10 +45,11 @@ export default async function UsersPage() {
     />
     <section className="card">
       <div className="table-wrap"><table>
-        <thead><tr><th>Usuário</th><th>Perfil</th><th>Permissões</th><th>2FA</th><th>Status</th><th className="col-actions"><span className="sr-only">Ações</span></th></tr></thead>
+        <thead><tr><th>Usuário</th><th>Perfil</th><th>Lojas</th><th>Permissões</th><th>2FA</th><th>Status</th><th className="col-actions"><span className="sr-only">Ações</span></th></tr></thead>
         <tbody>{users.rows.map((user) => <tr key={user.id}>
           <td className="cell-wrap"><span className="cell-main"><b>{user.name}</b><small>{user.email}</small></span></td>
-          <td><Badge tone={user.role === "ADMIN" ? "info" : "neutral"}>{user.role === "ADMIN" ? "Administrador" : "Operador"}</Badge></td>
+          <td><span className="row-actions"><Badge tone={user.role === "ADMIN" ? "info" : "neutral"}>{user.role === "ADMIN" ? "Administrador" : "Operador"}</Badge>{user.is_account_owner && <Badge tone="ok">Proprietário</Badge>}</span></td>
+          <td className="cell-wrap">{user.is_account_owner ? <span className="muted">Todas as lojas</span> : user.stores.length ? user.stores.join(", ") : <span className="muted">Sem loja</span>}</td>
           <td className="muted">{user.role === "ADMIN" ? "Acesso total" : user.permissions.length ? `${user.permissions.length} adicional(is)` : "Somente PDV"}</td>
           <td>{user.totp_enabled ? <Badge tone="ok"><ShieldCheck size={12}/>Ativo</Badge> : <span className="muted">Não configurado</span>}</td>
           <td><Badge tone={user.active ? "ok" : "neutral"} dot>{user.active ? "Ativo" : "Inativo"}</Badge></td>

@@ -66,6 +66,7 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.getByText("Fluxo financeiro realizado — últimos 14 dias")).toBeVisible();
     const { version } = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
     await expect(page.locator(".admin-footer")).toContainText(`Versão ${version}`);
+    await expect(page.locator(".admin-footer")).toContainText("Coliseu TCG");
     await page.getByRole("button", { name: "Recolher menu" }).click();
     await expect(page.getByRole("button", { name: "Expandir menu" })).toBeVisible();
     await page.getByRole("button", { name: "Expandir menu" }).click();
@@ -99,6 +100,29 @@ test.describe.serial("fluxos essenciais", () => {
     await createForm.getByLabel("E-mail").fill(`jogador-e2e-${Date.now()}@coliseu.local`);
     await createForm.getByRole("button", { name: "Salvar" }).click();
     await expect(page.locator("td b", { hasText: playerName })).toBeVisible();
+  });
+
+  test("usuário novo nasce vinculado à loja e o proprietário não pode ser rebaixado", async ({ page }) => {
+    const email = `usuario-e2e-${Date.now()}@coliseu.local`;
+    await login(page, adminEmail, seedPassword);
+    await page.goto("/admin/users");
+    const owner = page.locator("tr", { hasText: adminEmail });
+    await expect(owner.getByText("Proprietário")).toBeVisible();
+    await expect(owner.getByText("Todas as lojas")).toBeVisible();
+
+    await page.getByRole("button", { name: "Novo usuário" }).click();
+    const createForm = page.getByRole("dialog");
+    await createForm.getByLabel("Nome").fill("Usuário E2E");
+    await createForm.getByLabel("E-mail").fill(email);
+    await createForm.getByLabel("Senha").fill("SenhaE2E-12345");
+    await createForm.getByRole("button", { name: "Criar usuário" }).click();
+    await expect(page.locator("tr", { hasText: email }).getByText("Coliseu TCG")).toBeVisible();
+
+    await owner.getByRole("button", { name: "Editar" }).click();
+    const editForm = page.getByRole("dialog");
+    await editForm.getByLabel("Perfil").selectOption("OPERATOR");
+    await editForm.getByRole("button", { name: "Salvar alterações" }).click();
+    await expect(page.getByText("O proprietário da conta não pode ser desativado nem rebaixado.")).toBeVisible();
   });
 
   test("administrador acessa o painel de notas fiscais", async ({ page }) => {

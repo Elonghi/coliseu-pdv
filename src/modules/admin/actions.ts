@@ -6,6 +6,7 @@ import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
 import { formatMoney, parseMoney } from "@/lib/money";
 import { requirePermission, requireUser } from "@/modules/auth/session";
+import { attachUserToAccount, ownerProtectionError } from "@/modules/auth/stores";
 import { permissionOptions, permissions } from "@/modules/auth/permissions";
 import { createProduct, updateProduct, type ProductInput } from "@/modules/catalog/service";
 import { removeImage, saveProductImage } from "@/modules/catalog/storage";
@@ -124,18 +125,22 @@ export async function userAction(_: ActionState, form: FormData): Promise<Action
       await client.query("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE");
       let targetId = id;
       if (id) {
-        const before = await client.query<{ role: string; active: boolean }>("SELECT role,active FROM users WHERE id=$1 FOR UPDATE", [id]);
-        if (!before.rows[0]) throw new AppError("Usuário não encontrado.");
+        const before = await client.query<{ role: string; active: boolean; account_id: string | null; is_account_owner: boolean }>("SELECT role,active,account_id,is_account_owner FROM users WHERE id=$1 FOR UPDATE", [id]);
+        if (!before.rows[0] || (actor.accountId && before.rows[0].account_id && before.rows[0].account_id !== actor.accountId)) throw new AppError("Usuário não encontrado.");
+        const protectedOwner = ownerProtectionError({ isAccountOwner: before.rows[0].is_account_owner }, { role, active });
+        if (protectedOwner) throw new AppError(protectedOwner);
         if (before.rows[0].role === "ADMIN" && before.rows[0].active && (role !== "ADMIN" || !active)) {
-          const count = await client.query<{ count: string }>("SELECT count(*) FROM users WHERE role='ADMIN' AND active=true");
+          const count = await client.query<{ count: string }>("SELECT count(*) FROM users WHERE role='ADMIN' AND active=true AND ($1::uuid IS NULL OR account_id=$1 OR account_id IS NULL)", [actor.accountId]);
           if (Number(count.rows[0].count) <= 1) throw new AppError("Não é possível desativar ou rebaixar o último administrador.");
         }
         await client.query(`UPDATE users SET name=$1,email=$2,role=$3,active=$4,password_hash=CASE WHEN $5::text IS NULL THEN password_hash ELSE $5 END,updated_at=now() WHERE id=$6`, [name, email, role, active, passwordHash, id]);
         if (form.get("resetTotp") === "true") await client.query("UPDATE users SET totp_enabled=false,totp_secret_encrypted=NULL,updated_at=now() WHERE id=$1", [id]);
         if (!active) await client.query("DELETE FROM sessions WHERE user_id=$1", [id]);
+        if (actor.accountId && !before.rows[0].account_id) await attachUserToAccount(client, id, actor.accountId, actor.stores.map((store) => store.id));
       } else {
         const result = await client.query<{ id: string }>("INSERT INTO users (name,email,password_hash,role,active) VALUES ($1,$2,$3,$4,$5) RETURNING id", [name, email, passwordHash, role, active]);
         targetId = result.rows[0].id;
+        if (actor.accountId) await attachUserToAccount(client, targetId, actor.accountId, actor.stores.map((store) => store.id));
       }
       await client.query("DELETE FROM user_permissions WHERE user_id=$1", [targetId]);
       for (const permission of selected) await client.query("INSERT INTO user_permissions(user_id,permission) VALUES ($1,$2)", [targetId, permission]);
