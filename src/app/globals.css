@@ -344,6 +344,17 @@ body:has(dialog[open]) { overflow: hidden; }
 .admin-shell.menu-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
 .admin-sidebar { position: sticky; top: 0; z-index: 40; height: 100dvh; min-width: 0; display: flex; flex-direction: column; overflow: hidden; color: var(--sidebar-ink); background: var(--sidebar); border-right: 1px solid rgb(255 255 255 / .08); }
 .admin-brand { min-height: 72px; padding: 0 17px; display: flex; align-items: center; gap: .7rem; border-bottom: 1px solid rgb(255 255 255 / .1); }
+.store-switcher { padding: 10px 14px 4px; }
+.store-switcher label { display: grid; gap: .3rem; color: rgb(255 255 255 / .62); font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.store-switcher label > span { display: flex; align-items: center; gap: .35rem; }
+.store-switcher select { width: 100%; min-height: 38px; padding: .4rem .65rem; border: 1px solid rgb(255 255 255 / .16); border-radius: 9px; background: rgb(255 255 255 / .07); color: white; font: inherit; font-size: .85rem; font-weight: 650; letter-spacing: 0; text-transform: none; }
+.store-switcher select option { color: #101828; }
+.admin-sidebar.is-collapsed .store-switcher { display: none; }
+.pos-choose-store { max-width: 30rem; margin: 18vh auto 0; padding: 0 20px; display: grid; gap: .8rem; text-align: center; }
+.pos-choose-store h1 { font-size: 1.4rem; font-weight: 750; }
+.pos-choose-store p { color: var(--muted); }
+.pos-choose-store .store-switcher label { color: var(--muted); }
+.pos-choose-store .store-switcher select { background: var(--surface); color: var(--text, #101828); border-color: var(--line-strong, #d0d5dd); }
 .admin-brand-mark { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border-radius: 9px; color: white; background: #12b76a; }
 .admin-brand-copy { min-width: 0; display: grid; line-height: 1.05; white-space: nowrap; }
 .admin-brand-copy span { color: #34d399; font-size: .65rem; font-weight: 900; letter-spacing: .2em; }

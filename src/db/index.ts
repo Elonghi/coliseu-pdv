@@ -1,8 +1,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { rawPool } from "./raw";
 import * as schema from "./schema";
+import { scopedPool } from "./scope";
 
-const globalForDb = globalThis as unknown as { coliseuPool?: Pool };
-export const pool = globalForDb.coliseuPool ?? new Pool({ connectionString: process.env.DATABASE_URL ?? "postgresql://coliseu:coliseu@localhost:55432/coliseu", max: 20 });
-if (process.env.NODE_ENV !== "production") globalForDb.coliseuPool = pool;
+/* O pool do app aplica, em cada uso, o lojista e a loja ativa da sessão (ver ./scope.ts). */
+export const pool = scopedPool(rawPool);
 export const db = drizzle(pool, { schema });

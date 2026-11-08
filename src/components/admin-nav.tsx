@@ -9,6 +9,7 @@ import type { Permission } from "@/modules/auth/permissions";
 import type { SessionUser } from "@/modules/auth/session";
 import { adminNavigationGroups as groups } from "@/components/admin-navigation";
 import { InstallAppButton } from "@/components/pwa";
+import { StoreSwitcher } from "@/components/store-switcher";
 
 export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
   user: SessionUser;
@@ -49,6 +50,7 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
       <div className="admin-brand-copy"><span>COLISEON</span><strong>Gestão PDV</strong></div>
       <button className="admin-mobile-close" type="button" onClick={onClose} aria-label="Fechar menu"><X size={21}/></button>
     </div>
+    <StoreSwitcher stores={user.stores} activeStoreId={user.activeStoreId} consolidated={user.consolidated}/>
 
     <button className="admin-collapse-button" type="button" onClick={onToggle} aria-label={collapsed ? "Expandir menu" : "Recolher menu"}>
       {collapsed ? <ChevronRight size={17}/> : <><PanelLeftClose size={17}/><span>Recolher menu</span><ChevronLeft size={15}/></>}

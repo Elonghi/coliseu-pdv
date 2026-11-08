@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import pg from "pg";
 import { expect, test, type Page } from "@playwright/test";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@coliseu.local";
@@ -205,5 +206,47 @@ test.describe.serial("fluxos essenciais", () => {
     await page.getByRole("button", { name: "Confirmar venda" }).click();
     await expect((await saleResponse).status()).toBe(201);
     await expect(page.getByText("Venda concluída")).toBeVisible();
+  });
+  test("lojista com mais de uma loja escolhe a loja ativa e o sistema grava nela", async ({ page }) => {
+    test.skip(!process.env.DATABASE_URL, "precisa acessar o banco para criar a segunda loja");
+    const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
+    const account = (await db.query<{ id: string }>("SELECT id FROM accounts LIMIT 1")).rows[0].id;
+    const second = (await db.query<{ id: string }>("INSERT INTO stores (account_id,name) VALUES ($1,'Loja E2E') RETURNING id", [account])).rows[0].id;
+    const registerName = `Caixa E2E ${Date.now()}`;
+    try {
+      await login(page, adminEmail, seedPassword);
+      await page.goto("/admin");
+      await expect(page.locator(".admin-footer")).toContainText("Todas as lojas (2)");
+      const switcher = page.getByLabel("Loja ativa");
+      await expect(switcher).toBeVisible();
+
+      // na visão de todas as lojas só se lê: gravar pede para escolher a loja
+      await page.goto("/admin/cash");
+      await page.getByRole("button", { name: "Novo caixa" }).click();
+      await page.getByRole("dialog").getByLabel("Nome").fill(registerName);
+      await page.getByRole("dialog").getByRole("button", { name: "Cadastrar caixa" }).click();
+      await expect(page.getByText("Escolha uma loja específica")).toBeVisible();
+      await page.keyboard.press("Escape");
+
+      // escolhendo a loja, o caixa é gravado nela
+      await switcher.selectOption({ label: "Loja E2E" });
+      await expect(page.locator(".admin-footer")).toContainText("Loja E2E");
+      await page.getByRole("button", { name: "Novo caixa" }).click();
+      await page.getByRole("dialog").getByLabel("Nome").fill(registerName);
+      await page.getByRole("dialog").getByRole("button", { name: "Cadastrar caixa" }).click();
+      await expect.poll(async () => (await db.query<{ store_id: string }>("SELECT store_id FROM cash_registers WHERE name=$1", [registerName])).rows[0]?.store_id).toBe(second);
+
+      // o PDV não funciona na visão de todas as lojas
+      await switcher.selectOption({ label: "Todas as lojas" });
+      await expect(page.locator(".admin-footer")).toContainText("Todas as lojas (2)");
+      await page.goto("/pdv");
+      await expect(page.getByRole("heading", { name: "Escolha a loja do caixa" })).toBeVisible();
+    } finally {
+      await db.query("DELETE FROM cash_registers WHERE name=$1", [registerName]);
+      await db.query("DELETE FROM user_stores WHERE store_id=$1", [second]);
+      await db.query("DELETE FROM stores WHERE id=$1", [second]);
+      await db.end();
+    }
   });
 });

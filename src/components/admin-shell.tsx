@@ -10,7 +10,7 @@ import { ToastProvider } from "@/components/toast";
 
 const STORAGE_KEY = "coliseu:admin-menu-collapsed";
 
-const storeLabel = (user: SessionUser) => user.stores.length === 1 ? user.stores[0].name : user.stores.length > 1 ? `${user.stores.length} lojas` : "Sem loja";
+const storeLabel = (user: SessionUser) => user.consolidated ? `Todas as lojas (${user.stores.length})` : user.stores.find((store) => store.id === user.activeStoreId)?.name ?? "Sem loja";
 
 export function AdminShell({ user, version, children }: { user: SessionUser; version: string; children: React.ReactNode }) {
   const pathname = usePathname();

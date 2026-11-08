@@ -29,3 +29,23 @@ export function ownerProtectionError(target: { isAccountOwner: boolean }, next: 
   if (target.isAccountOwner && (next.role !== "ADMIN" || !next.active)) return "O lojista titular da conta não pode ser desativado nem rebaixado.";
   return null;
 }
+
+export const STORE_COOKIE = "coliseu_store";
+export const ALL_STORES = "all";
+export type ActiveStore = { storeId: string | null; consolidated: boolean };
+
+/* Decide a loja ativa a partir das lojas a que o usuário tem acesso e do que ele escolheu (valor do cookie).
+ * Uma loja só: é ela. Várias: a escolhida, se for dele; sem escolha válida, a visão "Todas as lojas", que só lê. */
+export function resolveActiveStore(stores: StoreSummary[], requested?: string | null): ActiveStore {
+  if (stores.length === 0) return { storeId: null, consolidated: false };
+  if (stores.length === 1) return { storeId: stores[0].id, consolidated: false };
+  const chosen = stores.find((store) => store.id === requested);
+  if (chosen) return { storeId: chosen.id, consolidated: false };
+  return { storeId: null, consolidated: true };
+}
+
+/* Escopo de dados de quem está logado: o lojista, a loja ativa e as lojas que a requisição enxerga. */
+export function scopeFor(accountId: string | null, stores: StoreSummary[], requested?: string | null) {
+  const active = resolveActiveStore(stores, requested);
+  return { accountId, storeId: active.storeId, storeIds: active.storeId ? [active.storeId] : stores.map((store) => store.id) };
+}

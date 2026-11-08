@@ -88,6 +88,13 @@ Objetivo: corrigir produto lançado na loja errada e mover saldo entre lojas da 
 - **Edição em várias lojas:** formulários de cadastro ganham "Aplicar em" com seleção de lojas e "selecionar todas". Vale para preço, ativar ou desativar produto, categorias, formas de pagamento, fornecedores, usuários e permissões, e caixas. A gravação é uma transação única, e a auditoria registra uma linha por loja afetada, ligadas por um identificador de lote.
 - **Fatos operacionais** (lançar estoque, baixar duplicata, abrir caixa) sempre exigem uma loja definida.
 
+## 6.1 Como a loja ativa funciona (implementado)
+
+- Cada pessoa tem uma **loja ativa**, guardada num cookie (`coliseu_store`) e validada contra as lojas a que ela tem acesso. Com uma loja só, é sempre ela. Com várias, vale a escolhida; sem escolha, vale a visão **Todas as lojas**, que só lê.
+- O `pool` do banco (`src/db/index.ts`) aplica, em cada uso, o lojista e a loja da requisição (`app.account_id`, `app.store_id`, `app.store_ids`), e devolve a conexão sempre limpa ao pool. Os 46 arquivos que usam o `pool` não mudaram. Custo medido: cerca de 0,5 ms a mais por consulta, em banco local.
+- As colunas `store_id` e `account_id` têm como padrão esses valores, então a gravação cai na loja ativa sozinha. Na visão de todas as lojas, ou sem escopo e com mais de uma loja, a gravação **falha** e a tela orienta a escolher uma loja.
+- Fora de uma requisição (worker, scripts, testes) não há escopo, a não ser que o código o defina com `runWithScope`.
+
 ## 7. Isolamento
 
 - **RLS no Postgres em dois níveis.** A conta é a fronteira rígida (`app.account_id`). Dentro dela, as lojas que o usuário pode ver (`app.store_ids`).
