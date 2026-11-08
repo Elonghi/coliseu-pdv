@@ -34,6 +34,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/reset-to-invoice-entry.mj
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/create-app-role.mjs ./scripts/create-app-role.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/platform-admin.mjs ./scripts/platform-admin.mjs
+# bcryptjs fica embutido no código do app, então o pacote não vai na imagem; scripts/platform-admin.mjs precisa dele para criar a senha.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/bcryptjs ./node_modules/bcryptjs
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 USER nextjs
 EXPOSE 3000
