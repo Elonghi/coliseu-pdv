@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { pool } from "@/db";
+import { rawPool } from "@/db/raw";
 import { AppError } from "@/lib/errors";
 import { shouldUseSecureSessionCookie } from "@/lib/security";
 
@@ -10,7 +11,7 @@ import type { Permission } from "./permissions";
 import { hashSessionToken, SESSION_COOKIE } from "./request-scope";
 import { accessibleStoresJson, resolveActiveStore, STORE_COOKIE, type StoreSummary } from "./stores";
 
-export type SessionUser = { id: string; name: string; email: string; role: "ADMIN" | "OPERATOR"; permissions: Permission[]; accountId: string | null; isAccountOwner: boolean; stores: StoreSummary[]; activeStoreId: string | null; consolidated: boolean };
+export type SessionUser = { id: string; name: string; email: string; role: "ADMIN" | "OPERATOR"; permissions: Permission[]; accountId: string | null; isAccountOwner: boolean; isPlatformAdmin: boolean; stores: StoreSummary[]; activeStoreId: string | null; consolidated: boolean };
 const COOKIE_NAME = SESSION_COOKIE;
 const hashToken = hashSessionToken;
 
@@ -19,14 +20,14 @@ export async function createSession(userId: string, remember = false) {
   const regularHours = Math.min(168, Math.max(1, Number(process.env.SESSION_TTL_HOURS ?? 12) || 12));
   const rememberedDays = Math.min(365, Math.max(1, Number(process.env.REMEMBER_SESSION_TTL_DAYS ?? 30) || 30));
   const expires = new Date(Date.now() + (remember ? rememberedDays * 86_400_000 : regularHours * 3_600_000));
-  await pool.query("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)", [hashToken(token), userId, expires]);
+  await rawPool.query("INSERT INTO sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)", [hashToken(token), userId, expires]);
   (await cookies()).set(COOKIE_NAME, token, { httpOnly: true, secure: shouldUseSecureSessionCookie(), sameSite: "lax", path: "/", priority: "high", ...(remember ? { expires } : {}) });
 }
 
 export async function destroySession() {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
-  if (token) await pool.query("DELETE FROM sessions WHERE token_hash=$1", [hashToken(token)]);
+  if (token) await rawPool.query("DELETE FROM sessions WHERE token_hash=$1", [hashToken(token)]);
   store.delete(COOKIE_NAME);
 }
 
@@ -34,11 +35,11 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return null;
-  const result = await pool.query<Omit<SessionUser, "activeStoreId" | "consolidated">>(`SELECT u.id,u.name,u.email,u.role,u.account_id AS "accountId",u.is_account_owner AS "isAccountOwner",
+  const result = await pool.query<Omit<SessionUser, "activeStoreId" | "consolidated">>(`SELECT u.id,u.name,u.email,u.role,u.account_id AS "accountId",u.is_account_owner AS "isAccountOwner",u.is_platform_admin AS "isPlatformAdmin",
     ${accessibleStoresJson} AS stores,
     COALESCE(array_agg(up.permission) FILTER (WHERE up.permission IS NOT NULL),'{}') permissions
-    FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN user_permissions up ON up.user_id=u.id
-    WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true GROUP BY u.id`, [hashToken(token)]);
+    FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN accounts ac ON ac.id=u.account_id LEFT JOIN user_permissions up ON up.user_id=u.id
+    WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true AND (u.account_id IS NULL OR ac.active) GROUP BY u.id`, [hashToken(token)]);
   const user = result.rows[0];
   if (!user) return null;
   const active = resolveActiveStore(user.stores, store.get(STORE_COOKIE)?.value);

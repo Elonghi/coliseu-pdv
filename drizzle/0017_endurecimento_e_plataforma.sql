@@ -30,13 +30,13 @@ INSERT INTO "accounts" ("name") SELECT 'Coliseu TCG' WHERE EXISTS (SELECT 1 FROM
 INSERT INTO "stores" ("account_id","name") SELECT a."id",'Coliseu TCG' FROM "accounts" a WHERE NOT EXISTS (SELECT 1 FROM "stores");--> statement-breakpoint
 UPDATE "users" SET "account_id"=(SELECT "id" FROM "accounts" ORDER BY "created_at","id" LIMIT 1) WHERE "account_id" IS NULL AND NOT "is_platform_admin" AND EXISTS (SELECT 1 FROM "accounts");--> statement-breakpoint
 INSERT INTO "store_payment_methods" ("store_id","code","active") SELECT s."id",pm."code",pm."active" FROM "stores" s CROSS JOIN "payment_methods" pm ON CONFLICT DO NOTHING;--> statement-breakpoint
-CREATE FUNCTION "stores_default_payment_methods"() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION "stores_default_payment_methods"() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
   INSERT INTO "store_payment_methods" ("store_id","code","active") SELECT NEW."id",pm."code",pm."active" FROM "payment_methods" pm ON CONFLICT DO NOTHING;
   RETURN NULL;
 END $$;--> statement-breakpoint
 CREATE TRIGGER "stores_default_payment_methods" AFTER INSERT ON "stores" FOR EACH ROW EXECUTE FUNCTION "stores_default_payment_methods"();--> statement-breakpoint
-CREATE FUNCTION "payment_methods_to_stores"() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION "payment_methods_to_stores"() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
   INSERT INTO "store_payment_methods" ("store_id","code","active") SELECT s."id",NEW."code",NEW."active" FROM "stores" s ON CONFLICT DO NOTHING;
   RETURN NULL;

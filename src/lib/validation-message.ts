@@ -15,6 +15,7 @@ function describe(issue: Issue) {
 /** Erros de validação (Zod) chegam como JSON; transformamos em uma frase que a pessoa entenda. */
 export function readableError(text?: string) {
   if (text && /null value in column "(store_id|account_id)"/.test(text)) return "Escolha uma loja específica no seletor de lojas para fazer esta alteração: você está vendo todas as lojas.";
+  if (text && /violates row-level security policy/.test(text)) return "Escolha uma loja específica no seletor de lojas para fazer esta alteração. Se você já escolheu uma, esta operação não é permitida para a sua conta.";
   if (!text?.trimStart().startsWith("[")) return text;
   try {
     const issues = JSON.parse(text) as Issue[];

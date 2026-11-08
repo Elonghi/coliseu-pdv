@@ -34,6 +34,7 @@ describe("loja ativa", () => {
 
   it("o erro de gravar sem loja ativa vira uma orientação", () => {
     expect(readableError('null value in column "store_id" of relation "sales" violates not-null constraint')).toMatch(/Escolha uma loja específica/);
+    expect(readableError('new row violates row-level security policy for table "cash_registers"')).toMatch(/Escolha uma loja específica/);
     expect(readableError("outro erro qualquer")).toBe("outro erro qualquer");
   });
 });

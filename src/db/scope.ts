@@ -7,7 +7,7 @@ import type { Pool, PoolClient } from "pg";
  * O banco recebe isso em app.account_id, app.store_id e app.store_ids. As colunas account_id/store_id têm como padrão
  * o valor da sessão (funções app_current_account / app_current_store), então a gravação cai na loja certa sem o código
  * precisar informar. Sem loja ativa e com mais de uma loja, a gravação falha de propósito em vez de misturar dados. */
-export type DbScope = { accountId: string | null; storeId: string | null; storeIds: string[] };
+export type DbScope = { accountId: string | null; storeId: string | null; storeIds: string[]; platform?: boolean };
 
 const explicit = new AsyncLocalStorage<DbScope>();
 
@@ -32,10 +32,10 @@ export async function currentScope(): Promise<DbScope | null> {
 }
 
 type Queryable = Pick<PoolClient, "query">;
-const settings = (scope: DbScope) => [scope.accountId ?? "", scope.storeId ?? "", scope.storeIds.join(",")];
+const settings = (scope: DbScope) => [scope.accountId ?? "", scope.storeId ?? "", scope.storeIds.join(","), scope.platform ? "true" : ""];
 
 async function applyScope(client: Queryable, scope: DbScope) {
-  await client.query("SELECT set_config('app.account_id',$1,false),set_config('app.store_id',$2,false),set_config('app.store_ids',$3,false)", settings(scope));
+  await client.query("SELECT set_config('app.account_id',$1,false),set_config('app.store_id',$2,false),set_config('app.store_ids',$3,false),set_config('app.platform',$4,false)", settings(scope));
 }
 const clearScope = (client: Queryable) => applyScope(client, { accountId: null, storeId: null, storeIds: [] });
 

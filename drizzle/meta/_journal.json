@@ -127,6 +127,13 @@
       "when": 1794113535545,
       "tag": "0017_endurecimento_e_plataforma",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794114113300,
+      "tag": "0018_travas_no_banco",
+      "breakpoints": true
     }
   ]
 }

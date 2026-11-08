@@ -102,7 +102,7 @@ suite("executor de migrations para o terminal do app", () => {
     const database = await newDatabase();
     const total = journal(realFolder).entries.length;
     run(database, ["--apply"], { MIGRATIONS_FOLDER: copyFolder(total - 1) });
-    await query(database, "INSERT INTO users (name,email,password_hash,role,created_at) VALUES ('Dono','dono@x.test','x','ADMIN','2026-01-01')");
+    await query(database, "INSERT INTO users (name,email,password_hash,role,created_at,is_platform_admin) VALUES ('Dono','dono@x.test','x','ADMIN','2026-01-01',true)");
 
     const lastTag = journal(realFolder).entries[total - 1].tag;
     const consulta = run(database);

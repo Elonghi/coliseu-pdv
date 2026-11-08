@@ -17,8 +17,8 @@ const cache = new Map<string, { expires: number; value: Promise<DbScope | null> 
 async function load(token: string, requestedStore: string): Promise<DbScope | null> {
   const result = await rawPool.query<{ accountId: string | null; stores: StoreSummary[] }>(
     `SELECT u.account_id AS "accountId", ${accessibleStoresJson} AS stores
-     FROM sessions s JOIN users u ON u.id=s.user_id
-     WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true`, [hashSessionToken(token)]);
+     FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN accounts ac ON ac.id=u.account_id
+     WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true AND (u.account_id IS NULL OR ac.active)`, [hashSessionToken(token)]);
   const row = result.rows[0];
   return row ? scopeFor(row.accountId, row.stores, requestedStore) : null;
 }
