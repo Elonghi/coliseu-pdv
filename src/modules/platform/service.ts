@@ -27,7 +27,8 @@ export const newStoreSchema = z.object({ name: z.string().trim().min(2, "Informe
 const MANUAL = "Antes de criar outro lojista ou outra loja, ative o isolamento do banco: o app ainda conecta com um usuário de banco com privilégio total, e as travas existem mas não valem. Veja a seção 9 do roteiro de migração (docs/RUNBOOK_MIGRACAO.md).";
 
 /** O primeiro lojista e a primeira loja podem ser criados sem as travas valendo; a partir do segundo, não. */
-async function requireIsolationForMore(client: PoolClient, table: "accounts" | "stores") {
+async function requireIsolationForMore(client: PoolClient, table: "accounts" | "stores", skip = false) {
+  if (skip) return;
   const existing = (await client.query<{ n: number }>(`SELECT count(*)::int n FROM ${table}`)).rows[0].n;
   if (existing >= 1 && !(await isolationStatus()).enforced) throw new AppError(MANUAL, 409, "ISOLATION_REQUIRED");
 }
@@ -67,11 +68,12 @@ export async function getAccount(accountId: string) {
 }
 
 /** Cria o lojista com o titular e a primeira loja. O titular enxerga todas as lojas do lojista, hoje e no futuro. */
-export async function createAccount(input: unknown, actorId: string) {
+/** `skipIsolationCheck` existe só para o comando de desenvolvimento do cliente de demonstração: a interface nunca o usa. */
+export async function createAccount(input: unknown, actorId: string, options: { skipIsolationCheck?: boolean } = {}) {
   const parsed = newAccountSchema.parse(input);
   const passwordHash = await hash(parsed.ownerPassword, 12);
   return transaction(async (client) => {
-    await requireIsolationForMore(client, "accounts");
+    await requireIsolationForMore(client, "accounts", options.skipIsolationCheck);
     const account = (await client.query<{ id: string }>("INSERT INTO accounts (name,max_stores,notes) VALUES ($1,$2,$3) RETURNING id", [parsed.name, parsed.maxStores ?? null, parsed.notes || null])).rows[0].id;
     const store = (await client.query<{ id: string }>("INSERT INTO stores (account_id,name,cnpj) VALUES ($1,$2,$3) RETURNING id", [account, parsed.storeName, parsed.storeCnpj || null])).rows[0].id;
     const owner = (await client.query<{ id: string }>("INSERT INTO users (name,email,password_hash,role,account_id,is_account_owner) VALUES ($1,$2,$3,'ADMIN',$4,true) RETURNING id", [parsed.ownerName, parsed.ownerEmail, passwordHash, account])).rows[0].id;
@@ -81,14 +83,14 @@ export async function createAccount(input: unknown, actorId: string) {
   });
 }
 
-export async function addStore(accountId: string, input: unknown, actorId: string) {
+export async function addStore(accountId: string, input: unknown, actorId: string, options: { skipIsolationCheck?: boolean } = {}) {
   const parsed = newStoreSchema.parse(input);
   return transaction(async (client) => {
     const account = (await client.query<{ max_stores: number | null; active: boolean }>("SELECT max_stores,active FROM accounts WHERE id=$1 FOR UPDATE", [accountId])).rows[0];
     if (!account) throw new AppError("Lojista não encontrado.", 404);
     const current = (await client.query<{ n: number }>("SELECT count(*)::int n FROM stores WHERE account_id=$1", [accountId])).rows[0].n;
     if (account.max_stores !== null && current >= account.max_stores) throw new AppError(`Este lojista já está no limite de ${account.max_stores} loja(s). Aumente o limite para adicionar outra.`, 409, "STORE_LIMIT");
-    await requireIsolationForMore(client, "stores");
+    await requireIsolationForMore(client, "stores", options.skipIsolationCheck);
     const store = (await client.query<{ id: string }>("INSERT INTO stores (account_id,name,cnpj) VALUES ($1,$2,$3) RETURNING id", [accountId, parsed.name, parsed.cnpj || null])).rows[0].id;
     await audit(client, actorId, "PLATFORM_STORE_CREATE", "store", store, accountId, { name: parsed.name, cnpj: parsed.cnpj || null });
     return store;

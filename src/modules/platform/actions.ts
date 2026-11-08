@@ -25,6 +25,16 @@ export async function createAccountAction(_: ActionState, form: FormData): Promi
   } catch (error) { return { error: describe(error) }; }
 }
 
+export async function createDemoAccountAction(_: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    const actor = await requirePlatformAdmin();
+    const { createDemoAccount } = await import("./demo");
+    const result = await createDemoAccount({ name: text(form, "name"), ownerEmail: text(form, "ownerEmail"), password: text(form, "password") }, actor.id);
+    revalidatePath("/plataforma");
+    return { ok: `Demonstração criada: ${result.counts.sales} vendas, ${result.counts.invoices} notas fiscais e ${result.counts.products} produtos em ${result.counts.stores} lojas. Titular: ${result.logins[0].email}. A equipe usa o mesmo e-mail com +gerente-shopping, +caixa-centro e +caixa-shopping, todos com a mesma senha.` };
+  } catch (error) { return { error: describe(error) }; }
+}
+
 export async function addStoreAction(_: ActionState, form: FormData): Promise<ActionState> {
   try {
     const actor = await requirePlatformAdmin();

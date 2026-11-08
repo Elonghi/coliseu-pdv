@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { AlertTriangle, Building2, Plus, ShieldCheck, Store, Users } from "lucide-react";
+import { AlertTriangle, Building2, Plus, Presentation, ShieldCheck, Store, Users } from "lucide-react";
 import { ActionForm } from "@/components/action-form";
 import { Modal } from "@/components/modal";
 import { Badge, DateTimeCell, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import { requirePlatformAdmin } from "@/modules/auth/session";
-import { createAccountAction } from "@/modules/platform/actions";
+import { createAccountAction, createDemoAccountAction } from "@/modules/platform/actions";
 import { asPlatform, listAccounts } from "@/modules/platform/service";
 import { isolationStatus, migrationStatus } from "@/modules/platform/status";
 
@@ -43,9 +43,18 @@ export default async function PlatformPage() {
       eyebrow="Plataforma"
       title="Lojistas"
       description="Os clientes do Coliseon. Cada lojista tem as suas lojas, a sua equipe e os seus dados, sem ver os de ninguém."
-      actions={<Modal trigger={<><Plus size={16}/>Novo lojista</>} triggerClassName="btn btn-success" size="lg" title="Novo lojista" description="Cria o cliente, a primeira loja e o titular que vai administrar tudo.">
-        <ActionForm action={createAccountAction} submitLabel="Criar lojista" className="grid gap-5"><NewAccountFields/></ActionForm>
-      </Modal>}
+      actions={<>
+        <Modal trigger={<><Presentation size={16}/>Cliente de demonstração</>} triggerClassName="btn btn-ghost" size="sm" title="Cliente de demonstração" description="Cria um lojista fictício, pronto para apresentar: duas lojas, equipe, catálogo com código de barras para as etiquetas, notas fiscais, financeiro e quatro semanas de vendas.">
+          <ActionForm action={createDemoAccountAction} submitLabel="Criar demonstração" className="grid gap-4">
+            <label className="label">Nome do cliente<input className="field" name="name" defaultValue="Arena Dourada (demonstração)" required/></label>
+            <label className="label">E-mail do titular<input className="field" type="email" name="ownerEmail" defaultValue="demo@coliseon.test" required autoComplete="off"/><span className="field-hint">A equipe usa este e-mail com +gerente-shopping, +caixa-centro e +caixa-shopping.</span></label>
+            <label className="label">Senha de todos os acessos<input className="field" type="password" name="password" minLength={10} required autoComplete="new-password"/><span className="field-hint">Mínimo de 10 caracteres. Leva alguns segundos para criar tudo.</span></label>
+          </ActionForm>
+        </Modal>
+        <Modal trigger={<><Plus size={16}/>Novo lojista</>} triggerClassName="btn btn-success" size="lg" title="Novo lojista" description="Cria o cliente, a primeira loja e o titular que vai administrar tudo.">
+          <ActionForm action={createAccountAction} submitLabel="Criar lojista" className="grid gap-5"><NewAccountFields/></ActionForm>
+        </Modal>
+      </>}
     />
 
     <section className="stat-grid" aria-label="Resumo do sistema">

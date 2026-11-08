@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import pg from "pg";
 import { expect, test, type Page } from "@playwright/test";
@@ -326,6 +327,83 @@ test.describe.serial("fluxos essenciais", () => {
         await db.query("DELETE FROM accounts WHERE id=$1", [id]);
       }
       await db.query("UPDATE users SET is_platform_admin=false WHERE lower(email)=lower($1)", [adminEmail]);
+      await db.end();
+    }
+  });
+  test("o cliente de demonstração criado pelo painel traz lojas, etiquetas, notas fiscais e vendas prontas para apresentar", async ({ page, browser }) => {
+    test.setTimeout(240_000);
+    test.skip(!process.env.DATABASE_URL, "precisa acessar o banco para dar o acesso de administrador do sistema");
+    const enforced = Boolean(process.env.APP_DATABASE_URL);
+    const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
+    const stamp = Date.now();
+    const email = `demo-${stamp}@coliseon.test`;
+    const password = "SenhaDemonstracao-26";
+    await db.query("UPDATE users SET is_platform_admin=true WHERE lower(email)=lower($1)", [adminEmail]);
+    try {
+      await login(page, adminEmail, seedPassword);
+      await page.goto("/plataforma");
+      await page.getByRole("button", { name: "Cliente de demonstração" }).click();
+      const form = page.getByRole("dialog");
+      await form.getByLabel("Nome do cliente").fill(`Demo E2E ${stamp}`);
+      await form.getByLabel("E-mail do titular").fill(email);
+      await form.getByLabel("Senha de todos os acessos").fill(password);
+      await form.getByRole("button", { name: "Criar demonstração" }).click();
+      if (!enforced) {
+        await expect(page.getByText("ative o isolamento do banco")).toBeVisible({ timeout: 60_000 });
+        return;
+      }
+      await expect(page.getByText("Demonstração criada:")).toBeVisible({ timeout: 120_000 });
+
+      const titularContext = await browser.newContext();
+      const titular = await titularContext.newPage();
+      await login(titular, email, password);
+      await titular.goto("/admin");
+      await expect(titular.locator(".admin-footer")).toContainText("Todas as lojas (2)");
+      await expect(titular.getByRole("heading", { name: "Por loja" })).toBeVisible();
+      await expect(titular.getByRole("cell", { name: "Loja Centro" })).toBeVisible();
+      await expect(titular.getByRole("cell", { name: "Loja Shopping" })).toBeVisible();
+      await titular.goto("/admin/labels");
+      await expect(titular.locator(".print-label").first()).toBeVisible();
+      await titular.goto("/admin/fiscal");
+      await expect(titular.locator("td", { hasText: "Distribuidora Cards e Games Ltda" }).first()).toBeVisible();
+      await titular.goto("/admin/products");
+      await expect(titular.getByText("Play Booster Bloomburrow").first()).toBeVisible();
+      await titularContext.close();
+
+      const managerContext = await browser.newContext();
+      const manager = await managerContext.newPage();
+      await login(manager, email.replace("@", "+gerente-shopping@"), password);
+      await manager.goto("/admin");
+      await expect(manager.locator(".admin-footer")).toContainText("Loja Shopping");
+      await expect(manager.getByLabel("Loja ativa")).toHaveCount(0);
+      await managerContext.close();
+    } finally {
+      await db.query("UPDATE accounts SET active=false WHERE name=$1", [`Demo E2E ${stamp}`]);
+      await db.query("UPDATE users SET is_platform_admin=false WHERE lower(email)=lower($1)", [adminEmail]);
+      await db.end();
+    }
+  });
+  test("o administrador do sistema criado pelo script, sem lojista, entra direto no painel do sistema", async ({ page }) => {
+    test.skip(!process.env.DATABASE_URL, "precisa acessar o banco para criar o usuário pelo script");
+    const email = `sistema-${Date.now()}@e2e.test`;
+    const password = "SenhaDoSistema-2026";
+    const env = { ...process.env, MIGRATION_DATABASE_URL: "", PLATFORM_ADMIN_PASSWORD: password };
+    execFileSync(process.execPath, ["scripts/platform-admin.mjs", `--email=${email}`, "--create", "--name=Dono do Sistema E2E", "--apply"], { env, stdio: "pipe" });
+    const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
+    try {
+      await login(page, email, password);
+      await expect(page).toHaveURL(/\/plataforma/);
+      await expect(page.getByRole("heading", { name: "Lojistas", exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Minha loja" })).toHaveCount(0);
+      await page.goto("/admin");
+      await expect(page).toHaveURL(/\/plataforma/);
+      await page.goto("/pdv");
+      await expect(page).toHaveURL(/\/plataforma/);
+    } finally {
+      await db.query("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email=$1)", [email]);
+      await db.query("DELETE FROM users WHERE email=$1", [email]);
       await db.end();
     }
   });

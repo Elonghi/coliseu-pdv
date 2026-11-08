@@ -231,6 +231,8 @@ Assumido por padrão, ajustável:
 | Painel do administrador do sistema (`/plataforma`) | Pronto: criar lojista, adicionar lojas, limite, suspender, senha do titular, saúde do isolamento |
 | Resumo por loja no painel do lojista | Pronto (visão "Todas as lojas") |
 | Aviso de migration pendente e diagnóstico no `/api/health` | Pronto |
+| Usuário de administrador do sistema criado por script (`platform-admin.mjs --create`) | Pronto (runbook, seção 12.1) |
+| Cliente de demonstração (duas lojas, equipe, catálogo, notas, financeiro e vendas) pelo painel ou por comando | Pronto (runbook, seção 12.2) |
 
 Ainda não implementado, de propósito:
 

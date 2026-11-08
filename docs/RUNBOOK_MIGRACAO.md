@@ -210,3 +210,47 @@ node scripts/platform-admin.mjs --email=seu@email.com --apply
 6. Ativar o isolamento (seção 9).
 7. Só então criar o segundo lojista pelo painel do sistema.
 
+## 12. Seu usuário de administrador do sistema e o cliente de demonstração
+
+### 12.1 Criar o seu usuário de administrador do sistema
+
+Serve para quem ainda não tem um acesso ao painel `/plataforma`. O usuário criado **não pertence a nenhum lojista**: ao entrar, cai direto no painel do sistema, sem ver vendas nem estoque de ninguém. No terminal do app, depois das migrations (seção 8):
+
+```bash
+node scripts/platform-admin.mjs --email=voce@empresa.com --create --name="Seu Nome"
+```
+
+Sem `--apply`, só mostra o que faria. Para criar, informe a sua senha **por variável de ambiente** (assim ela não fica no histórico do comando nem na tela). Troque o e-mail, o nome e a senha pelos seus:
+
+```bash
+PLATFORM_ADMIN_PASSWORD='uma senha sua com 10 ou mais caracteres' node scripts/platform-admin.mjs --email=voce@empresa.com --create --name="Seu Nome" --apply
+```
+
+Se preferir que o sistema gere a senha, rode sem `PLATFORM_ADMIN_PASSWORD`: o script gera uma senha forte e a mostra **uma única vez**.
+
+- **Esqueceu a senha?** `node scripts/platform-admin.mjs --email=voce@empresa.com --reset-password --apply` (também aceita `PLATFORM_ADMIN_PASSWORD`). Encerra as sessões abertas.
+- **Já existe um usuário e você quer só dar o acesso a ele** (por exemplo, o titular da sua loja): `node scripts/platform-admin.mjs --email=ele@empresa.com --apply`. Ele passa a ter o link "Painel do sistema" no menu, além da loja.
+- O script também funciona sem o painel estar pronto: ele só precisa das migrations aplicadas.
+
+### 12.2 Cliente de demonstração, para apresentações
+
+Cria um lojista **fictício e completo**, para você apresentar o sistema sem usar dados de cliente real. Pelo painel do sistema, botão **Cliente de demonstração**: informe o nome, o e-mail do titular e uma senha (a mesma vale para todos os acessos). Leva alguns segundos.
+
+**Pré-requisito:** o isolamento do banco ativo (seção 9). A demonstração é um segundo lojista no mesmo banco, e o painel recusa criá-lo enquanto as travas não valem, para ela nunca enxergar os dados do cliente real.
+
+O que é criado, tudo fictício (nomes inventados, CNPJs de faixa fictícia, e-mails de exemplo):
+
+- **Duas lojas** (Centro e Shopping) e **quatro acessos**, todos com a mesma senha:
+  - o **titular** (o e-mail que você informou): vê as duas lojas, o seletor "Todas as lojas" e o quadro "Por loja" no painel;
+  - o **gerente da Shopping** (`seu-email+gerente-shopping@dominio`): administrador, mas só da Shopping, para mostrar a diferença para o lojista;
+  - um **caixa por loja** (`+caixa-centro` e `+caixa-shopping`): entram direto no PDV.
+- **31 produtos** em 5 categorias (Magic, Pokémon, Yu-Gi-Oh!, acessórios, bebidas e snacks), todos com **código de barras EAN-13 válido**, prontos para as **etiquetas**, com caixas e boosters para mostrar a abertura de box.
+- **Notas fiscais de compra**, três por loja: uma com entrada completa no estoque, uma com **falta registrada** na conferência e uma **ainda por dar entrada**, para mostrar o fluxo de recebimento.
+- **Financeiro:** 10 duplicatas a pagar das notas (2 já pagas, algumas vencidas e outras a vencer) e **recebíveis** das vendas no fiado.
+- **150 vendas em quatro semanas**, feitas pelo mesmo serviço do PDV, com PIX, dinheiro, cartão, crédito do jogador, pagamento dividido e fiado, 4 vendas canceladas e um caixa aberto por loja. Os gráficos do painel já aparecem preenchidos.
+- 8 jogadores (3 com crédito), 2 fornecedores e 1 pedido de compra enviado por loja.
+
+**Depois de apresentar:** não há botão para apagar a demonstração (isso exigiria apagar dados de dezenas de tabelas). Suspenda o lojista em `/plataforma` (ninguém dele entra mais) e, para a próxima apresentação, crie outra demonstração com **outro e-mail de titular**. Podem existir várias ao mesmo tempo.
+
+Em desenvolvimento (ou pelo serviço `migrate` do compose, que tem `tsx`), o mesmo cliente é criado por comando: `npm run db:seed-demo` (variáveis `DEMO_OWNER_EMAIL` e `DEMO_PASSWORD`; com o banco de desenvolvimento, que roda sem as travas, é preciso `DEMO_SKIP_ISOLATION_CHECK=true`).
+
