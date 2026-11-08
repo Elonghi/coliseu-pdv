@@ -51,6 +51,15 @@ const steps = [];
 const exists = async (table) => (await client.query("SELECT to_regclass($1) IS NOT NULL AS ok", [`public.${table}`])).rows[0].ok;
 const step = async (label, sql) => { const result = await client.query(sql); steps.push({ Etapa: label, Registros: result.rowCount ?? 0 }); };
 
+  // Trava de segurança: estes scripts apagam os dados de TODAS as lojas e de TODOS os lojistas. Só rodam com um único lojista.
+  const accounts = (await client.query("SELECT count(*)::int AS n FROM accounts")).rows[0].n;
+  if (accounts > 1) {
+    console.error(`Operação cancelada: este script apaga os dados de todos os lojistas, e hoje há ${accounts}. Ele só roda quando existe um único lojista.`);
+    process.exitCode = 1;
+    client.release();
+    await pool.end();
+    process.exit(1);
+  }
 try {
   await client.query("BEGIN");
   await client.query("SET LOCAL lock_timeout = '30s'");

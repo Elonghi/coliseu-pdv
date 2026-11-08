@@ -70,6 +70,13 @@ suite("script que reabre as notas para entrada de estoque", () => {
     await pool.query("INSERT INTO bank_transactions(import_id,external_id,occurred_on,amount_cents,settlement_id,reconciled_at,reconciled_by_id) VALUES ($1,'T1','2026-10-10',-1000,$2,now(),$3)", [bankImport, settlementId, adminId]);
   });
 
+  it("recusa rodar quando existe mais de um lojista, para nunca apagar os dados de outros clientes", async () => {
+    await pool.query("INSERT INTO accounts(name) VALUES ('Outro lojista')");
+    expect(() => run()).toThrow(/único lojista/);
+    expect(() => run(["--apply", `--db=${databaseName()}`], { CONFIRM_REOPEN_INVOICES: confirmation })).toThrow(/único lojista/);
+    expect(await count("sales")).toBe(1);
+  });
+
   it("a simulação mostra os números e não grava nada", async () => {
     const output = run();
     expect(output).toContain("SIMULAÇÃO");

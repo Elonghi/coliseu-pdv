@@ -1,6 +1,6 @@
 # Plano de migração: multi-conta e multi-loja
 
-Estado: **proposta para aprovação**. Nada deste plano foi implementado.
+Estado: **implementado** (ver a seção 13). O roteiro de lançamento está em `docs/RUNBOOK_MIGRACAO.md`, seções 8 a 11.
 Base de análise: 37 tabelas, cerca de 387 consultas SQL em 50 arquivos, `products.stock_quantity` usado em 59 pontos de 13 arquivos, configuração fiscal (CNPJ e certificado) lida de variáveis de ambiente.
 
 ## Vocabulário (use sempre estes termos)
@@ -217,3 +217,25 @@ Assumido por padrão, ajustável:
 - Custo médio por loja.
 - Crédito do jogador compartilhado vale em todas as lojas da conta.
 - Criação de novas contas por script no início, sem tela de plataforma e sem cadastro pelo site.
+
+## 13. Estado da implementação
+
+| Parte | Situação |
+|---|---|
+| Lojista, lojas, equipe e acesso por loja | Pronto (migration 0014) |
+| Colunas de loja e lojista nas tabelas, com padrão do banco | Pronto (0015) |
+| Loja ativa na sessão e no banco, seletor, visão "Todas as lojas" | Pronto (sem migration) |
+| Estoque por loja (`product_stock`), custo médio por loja | Pronto (0016) |
+| Unicidade por lojista, formas de pagamento por loja, consistência entre lojas, limite de lojas | Pronto (0017) |
+| Travas no banco (RLS) por lojista e por loja | Pronto (0018); valem quando o app conecta com `APP_DATABASE_URL` (runbook, seção 9) |
+| Painel do administrador do sistema (`/plataforma`) | Pronto: criar lojista, adicionar lojas, limite, suspender, senha do titular, saúde do isolamento |
+| Resumo por loja no painel do lojista | Pronto (visão "Todas as lojas") |
+| Aviso de migration pendente e diagnóstico no `/api/health` | Pronto |
+
+Ainda não implementado, de propósito:
+
+- **Transferência de estoque entre lojas** do mesmo lojista e **compartilhamento** de catálogo, fornecedores e jogadores por escolha do lojista. A estrutura já comporta (produtos e jogadores têm `store_id` opcional, e o estoque é por loja), faltam as telas e as regras de unir cadastros.
+- **Configuração fiscal por loja** (certificado e CNPJ no banco): hoje vem do ambiente, e as notas entram na loja com o CNPJ configurado.
+- **Cadastro de lojista pelo site** e cobrança por plano: hoje só pelo painel do sistema.
+- Endurecimentos opcionais: remover as colunas antigas de estoque de `products` (depois de alguns dias estável) e numeração de vendas e pedidos por loja.
+

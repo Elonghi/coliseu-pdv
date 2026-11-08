@@ -141,3 +141,72 @@ Esperado: **`sem loja` e `sem lojista` iguais a 0 em todas as linhas**, e o tota
 
 Volta atrás: a migration só acrescenta, então redeployar o commit anterior basta (o código antigo ignora as colunas). Para remover as colunas, restaure o backup.
 
+### 0016 `estoque_por_loja`, 0017 `endurecimento_e_plataforma` e 0018 `travas_no_banco` (lançamento do multi-lojista)
+
+Aplicam-se juntas, com um só `node scripts/migrate.mjs --apply` (é tudo numa transação: se algo falhar, nada é gravado).
+
+- **0016:** cria `product_stock` (saldo e custo médio por loja e produto), copia o estoque atual para a loja existente e liga gatilhos que mantêm `products.stock_quantity` como o total (scripts antigos e volta de versão continuam coerentes).
+- **0017:** unicidade de SKU, código de barras, categoria e fornecedor **por lojista**; nome do caixa por loja; formas de pagamento por loja (`store_payment_methods`); 26 gatilhos que recusam registro ligado a outra loja; `users.is_platform_admin`; `accounts.max_stores`.
+- **0018:** liga o RLS (travas do banco) em todas as tabelas de lojista, loja e identidade.
+
+**Janela:** a 0017 e a 0018 mexem em muitas tabelas. Aplique fora do horário de uso, com o backup feito e **depois** de a imagem nova estar no ar. Entre o deploy e a migration, quem entra no sistema vê o aviso "Atualização do sistema em andamento"; o administrador do sistema vê o comando para aplicar.
+
+Depois de aplicar, no terminal do app (só lê):
+
+```bash
+node -e 'const pg=require("pg");(async()=>{const c=new pg.Client({connectionString:process.env.DATABASE_URL});await c.connect();const q=async(s)=>(await c.query(s)).rows[0];const a=await q("SELECT COALESCE(sum(stock_quantity),0)::int total, count(*)::int produtos FROM products");const b=await q("SELECT COALESCE(sum(quantity),0)::int total, count(*)::int linhas, count(DISTINCT store_id)::int lojas FROM product_stock");const m=await q("SELECT (SELECT count(*) FROM store_payment_methods)::int formas_por_loja, ((SELECT count(*) FROM stores)*(SELECT count(*) FROM payment_methods))::int esperado");const t=await q("SELECT count(*)::int tabelas_sem_rls FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=\x27public\x27 AND c.relkind=\x27r\x27 AND NOT c.relrowsecurity AND c.relname IN (\x27sales\x27,\x27products\x27,\x27users\x27,\x27cash_registers\x27,\x27product_stock\x27,\x27audit_logs\x27)");console.log("produtos (total antigo):",JSON.stringify(a));console.log("estoque por loja:       ",JSON.stringify(b));console.log("formas de pagamento:    ",JSON.stringify(m));console.log("tabelas sem RLS:        ",JSON.stringify(t));await c.end()})()'
+```
+
+Esperado: o `total` de `produtos (total antigo)` igual ao de `estoque por loja`; `formas de pagamento` com os dois números iguais; `tabelas sem RLS` igual a 0. É normal haver menos `linhas` do que `produtos`: produto sem estoque não precisa de linha.
+
+Também confira `/api/health`: deve trazer `"migrations": {"pending": false}`.
+
+Volta atrás: o app antigo continua funcionando com o banco novo (as colunas antigas seguem coerentes). Para desfazer a migration, restaure o backup.
+
+## 9. Ativar o isolamento entre lojistas (papel de banco sem privilégio)
+
+As travas do banco (RLS) já existem depois da 0018, mas **só valem para um usuário de banco que não seja superusuário**. O compose cria o usuário do Postgres como superusuário, então, até este passo, o app ignora as travas. Por isso o painel do sistema **recusa criar o segundo lojista ou a segunda loja** enquanto o isolamento não estiver ativo.
+
+1. No Coolify, cadastre a variável secreta `APP_DB_PASSWORD` (24+ caracteres, sem espaços; por exemplo `openssl rand -base64 36`) e faça um deploy para ela chegar ao app. Nunca coloque essa senha no Git, em chat ou em chamado.
+2. No terminal do app, crie o papel (usa o usuário dono do banco, que continua em `DATABASE_URL`):
+
+```bash
+node scripts/create-app-role.mjs
+```
+
+3. No Coolify, cadastre `APP_DATABASE_URL` com a URL do papel novo: `postgresql://coliseu_app:<APP_DB_PASSWORD>@db:5432/coliseu` (caracteres especiais da senha precisam ir codificados na URL). Faça outro deploy.
+4. Confira em `/api/health` (`"isolation": {"enforced": true}`) e no painel do sistema: o cartão "Saúde do sistema" deve dizer **"Isolamento entre lojistas no banco: ativo"**.
+
+`DATABASE_URL` continua sendo o dono do banco e serve às migrations, aos scripts e ao worker. Só o app web usa `APP_DATABASE_URL`. Se algo der errado, apague `APP_DATABASE_URL` no Coolify e faça deploy: o app volta a conectar como antes.
+
+## 10. Painel do administrador do sistema
+
+É a área onde você, dono do sistema, cria lojistas, adiciona lojas e suspende contas. Fica em `/plataforma`. Quem a usa **não enxerga vendas, estoque, caixa, financeiro nem notas dos lojistas**, só contas, lojas e equipes.
+
+1. Dê o acesso à sua pessoa (já cadastrada como usuário), no terminal do app. Sem `--apply` só simula:
+
+```bash
+node scripts/platform-admin.mjs --email=seu@email.com
+node scripts/platform-admin.mjs --email=seu@email.com --apply
+```
+
+2. Entre de novo no sistema. Você passa a ver o link **Painel do sistema** no menu (se também for lojista) e o login te leva a `/plataforma` (se não pertencer a nenhum lojista).
+3. **Novo lojista:** nome do cliente, limite de lojas (opcional), primeira loja (nome e CNPJ opcional) e o titular (nome, e-mail e senha provisória). O titular vê todas as lojas dele e cadastra a própria equipe.
+4. **Adicionar loja:** dentro do lojista, respeitando o limite. O CNPJ da loja faz as notas fiscais emitidas para ele entrarem nessa loja.
+5. **Suspender:** ninguém do lojista entra até a reativação, e as sessões abertas caem. Os dados ficam guardados.
+6. **Senha do titular:** define uma senha provisória, desliga o 2FA dele e derruba as sessões.
+
+**Fiscal (SEFAZ):** a integração é configurada por um CNPJ no ambiente. O worker grava as notas na loja com esse CNPJ; sem CNPJ cadastrado, na única loja do sistema. Com várias lojas e sem o CNPJ cadastrado, o worker **não sincroniza** (e avisa no log) em vez de gravar na loja errada.
+
+**Scripts de reset** (`reset-import-data.mjs` e `reset-to-invoice-entry.mjs`) apagam os dados de todos os lojistas: por isso **se recusam a rodar** quando existe mais de um lojista.
+
+## 11. Ordem recomendada do lançamento
+
+1. Backup (seção 2).
+2. Enviar o código; esperar o deploy; abrir um terminal novo no app.
+3. `node scripts/migrate.mjs` (consulta) e, se mostrar 0016, 0017 e 0018 pendentes, `node scripts/migrate.mjs --apply` fora do horário de uso.
+4. Conferir (seção 8) e `/api/health`.
+5. Dar o acesso de administrador do sistema à sua pessoa (seção 10).
+6. Ativar o isolamento (seção 9).
+7. Só então criar o segundo lojista pelo painel do sistema.
+
