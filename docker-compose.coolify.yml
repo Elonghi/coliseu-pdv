@@ -48,6 +48,9 @@ services:
     environment:
       APP_URL: ${APP_URL:-http://localhost:3000}
       DATABASE_URL: postgresql://coliseu:${SERVICE_PASSWORD_64_POSTGRES}@db:5432/coliseu
+      APP_DATABASE_URL: ${APP_DATABASE_URL:-}
+      APP_DB_ROLE: ${APP_DB_ROLE:-coliseu_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
       STORAGE_PATH: /app/storage
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
       REMEMBER_SESSION_TTL_DAYS: ${REMEMBER_SESSION_TTL_DAYS:-30}

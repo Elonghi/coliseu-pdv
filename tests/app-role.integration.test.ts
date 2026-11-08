@@ -63,7 +63,8 @@ suite("papel de banco sem privilégio para a aplicação", () => {
       await expect(app.query("CREATE TABLE zz_nao_pode (id int)")).rejects.toThrow(/permission denied/);
       await expect(app.query("ALTER TABLE products ADD COLUMN zz_nao_pode int")).rejects.toThrow(/must be owner/);
       await expect(app.query("TRUNCATE products")).rejects.toThrow(/permission denied/);
-      await expect(app.query("SELECT * FROM drizzle.__drizzle_migrations")).rejects.toThrow(/permission denied/);
+      await app.query("SELECT count(*) FROM drizzle.__drizzle_migrations");
+      await expect(app.query("INSERT INTO drizzle.__drizzle_migrations (hash,created_at) VALUES ('x',1)")).rejects.toThrow(/permission denied/);
     } finally {
       await app.end();
     }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, ChevronLeft, ChevronRight, LogOut, PanelLeftClose, ShoppingBag, Store, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, LogOut, PanelLeftClose, Server, ShoppingBag, Store, X } from "lucide-react";
 import { logoutAction } from "@/modules/auth/actions";
 import type { Permission } from "@/modules/auth/permissions";
 import type { SessionUser } from "@/modules/auth/session";
@@ -77,6 +77,7 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
       })}
     </nav>
 
+    {user.isPlatformAdmin && <Link className="admin-platform-link" href="/plataforma"><Server size={15}/><span>Painel do sistema</span></Link>}
     <div className="admin-sidebar-footer">
       <div className="admin-user">
         <span className="admin-avatar">{user.name.slice(0, 1).toUpperCase()}</span>

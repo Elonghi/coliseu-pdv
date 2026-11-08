@@ -344,6 +344,21 @@ body:has(dialog[open]) { overflow: hidden; }
 .admin-shell.menu-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
 .admin-sidebar { position: sticky; top: 0; z-index: 40; height: 100dvh; min-width: 0; display: flex; flex-direction: column; overflow: hidden; color: var(--sidebar-ink); background: var(--sidebar); border-right: 1px solid rgb(255 255 255 / .08); }
 .admin-brand { min-height: 72px; padding: 0 17px; display: flex; align-items: center; gap: .7rem; border-bottom: 1px solid rgb(255 255 255 / .1); }
+.admin-platform-link { display: flex; align-items: center; gap: .55rem; margin: 6px 14px; padding: .55rem .7rem; border: 1px dashed rgb(255 255 255 / .25); border-radius: 9px; color: rgb(255 255 255 / .85); text-decoration: none; font-size: .82rem; font-weight: 650; }
+.admin-sidebar.is-collapsed .admin-platform-link span { display: none; }
+.pending-banner { margin: 0; padding: .7rem 1.2rem; border-radius: 0; text-align: center; font-size: .85rem; }
+.platform-shell { min-height: 100vh; background: var(--bg, #f4f6fa); }
+.platform-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 1.2rem; padding: 0 clamp(16px, 3vw, 38px); min-height: 56px; background: #172033; color: white; }
+.platform-brand { display: flex; align-items: center; gap: .55rem; color: white; text-decoration: none; }
+.platform-brand span { font-size: .68rem; font-weight: 800; letter-spacing: .12em; opacity: .65; }
+.platform-brand strong { font-size: .95rem; }
+.platform-header nav { display: flex; gap: .4rem; margin-right: auto; }
+.platform-header nav a { padding: .4rem .7rem; border-radius: 8px; color: rgb(255 255 255 / .82); text-decoration: none; font-size: .85rem; font-weight: 650; }
+.platform-header nav a:hover { background: rgb(255 255 255 / .1); color: white; }
+.platform-header form button { display: flex; align-items: center; gap: .4rem; padding: .4rem .7rem; border: 1px solid rgb(255 255 255 / .2); border-radius: 8px; background: transparent; color: white; font: inherit; font-size: .82rem; cursor: pointer; }
+.health-list { display: grid; }
+.health-row { display: flex; gap: .8rem; align-items: flex-start; padding: .9rem 1.15rem; border-top: 1px solid var(--line); }
+.health-row p { margin: .2rem 0 0; font-size: .85rem; }
 .store-switcher { padding: 10px 14px 4px; }
 .store-switcher label { display: grid; gap: .3rem; color: rgb(255 255 255 / .62); font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .store-switcher label > span { display: flex; align-items: center; gap: .35rem; }

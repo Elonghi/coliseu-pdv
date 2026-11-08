@@ -15,7 +15,8 @@ import pg from "pg";
 const role = process.env.APP_DB_ROLE || "coliseu_app";
 const password = process.env.APP_DB_PASSWORD ?? "";
 
-if (!process.env.DATABASE_URL) fail("DATABASE_URL não está configurada.");
+const connectionString = process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL;
+if (!connectionString) fail("DATABASE_URL não está configurada.");
 if (!/^[a-z_][a-z0-9_]{0,40}$/.test(role)) fail("APP_DB_ROLE inválido: use letras minúsculas, números e _ (até 41 caracteres).");
 if (!/^[\x21-\x7e]{24,}$/.test(password)) fail("APP_DB_PASSWORD deve ter 24 ou mais caracteres, sem espaços (ex.: openssl rand -base64 36).");
 
@@ -34,7 +35,7 @@ function scramVerifier(secret) {
   return `SCRAM-SHA-256$${iterations}:${salt.toString("base64")}$${storedKey.toString("base64")}:${hmac(salted, "Server Key").toString("base64")}`;
 }
 
-const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+const client = new pg.Client({ connectionString });
 await client.connect();
 try {
   const me = (await client.query("SELECT current_user AS name, current_database() AS db, (rolsuper OR rolcreaterole) AS can FROM pg_roles WHERE rolname=current_user")).rows[0];
@@ -55,11 +56,16 @@ try {
   await client.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${id(role)}`);
   await client.query(`ALTER DEFAULT PRIVILEGES FOR ROLE ${id(me.name)} IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${id(role)}`);
   await client.query(`ALTER DEFAULT PRIVILEGES FOR ROLE ${id(me.name)} IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${id(role)}`);
+  // Só leitura do controle de migrations: o painel do sistema compara o que o banco aplicou com o que o código espera.
+  if ((await client.query("SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS ok")).rows[0].ok) {
+    await client.query(`GRANT USAGE ON SCHEMA drizzle TO ${id(role)}`);
+    await client.query(`GRANT SELECT ON drizzle.__drizzle_migrations TO ${id(role)}`);
+  }
   await client.query("COMMIT");
 
   const check = (await client.query("SELECT rolsuper,rolbypassrls,rolcreatedb,rolcreaterole FROM pg_roles WHERE rolname=$1", [role])).rows[0];
   console.log(`Papel "${role}" ${exists ? "atualizado" : "criado"} no banco "${me.db}" (superusuário: ${check.rolsuper}, ignora RLS: ${check.rolbypassrls}).`);
-  console.log(`Permissões: leitura e escrita nas tabelas de dados (inclusive as criadas pelas próximas migrações de "${me.name}"); sem DDL, sem acesso ao controle de migrações.`);
+  console.log(`Permissões: leitura e escrita nas tabelas de dados (inclusive as criadas pelas próximas migrações de "${me.name}"); sem DDL; só leitura do controle de migrações.`);
   console.log(`URL para a aplicação (fase 5): postgresql://${role}:<APP_DB_PASSWORD>@<host>:5432/${me.db}`);
 } catch (error) {
   await client.query("ROLLBACK").catch(() => undefined);

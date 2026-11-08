@@ -32,6 +32,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/reset-import-data.mjs ./scripts/reset-import-data.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/reset-to-invoice-entry.mjs ./scripts/reset-to-invoice-entry.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/create-app-role.mjs ./scripts/create-app-role.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/platform-admin.mjs ./scripts/platform-admin.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 USER nextjs
 EXPOSE 3000

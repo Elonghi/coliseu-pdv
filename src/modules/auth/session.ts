@@ -9,7 +9,8 @@ import { shouldUseSecureSessionCookie } from "@/lib/security";
 
 import type { Permission } from "./permissions";
 import { hashSessionToken, SESSION_COOKIE } from "./request-scope";
-import { accessibleStoresJson, resolveActiveStore, STORE_COOKIE, type StoreSummary } from "./stores";
+import { loadSessionUser } from "./session-user";
+import { resolveActiveStore, STORE_COOKIE, type StoreSummary } from "./stores";
 
 export type SessionUser = { id: string; name: string; email: string; role: "ADMIN" | "OPERATOR"; permissions: Permission[]; accountId: string | null; isAccountOwner: boolean; isPlatformAdmin: boolean; stores: StoreSummary[]; activeStoreId: string | null; consolidated: boolean };
 const COOKIE_NAME = SESSION_COOKIE;
@@ -35,12 +36,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return null;
-  const result = await pool.query<Omit<SessionUser, "activeStoreId" | "consolidated">>(`SELECT u.id,u.name,u.email,u.role,u.account_id AS "accountId",u.is_account_owner AS "isAccountOwner",u.is_platform_admin AS "isPlatformAdmin",
-    ${accessibleStoresJson} AS stores,
-    COALESCE(array_agg(up.permission) FILTER (WHERE up.permission IS NOT NULL),'{}') permissions
-    FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN accounts ac ON ac.id=u.account_id LEFT JOIN user_permissions up ON up.user_id=u.id
-    WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true AND (u.account_id IS NULL OR ac.active) GROUP BY u.id`, [hashToken(token)]);
-  const user = result.rows[0];
+  const user = await loadSessionUser(pool, hashToken(token));
   if (!user) return null;
   const active = resolveActiveStore(user.stores, store.get(STORE_COOKIE)?.value);
   return { ...user, activeStoreId: active.storeId, consolidated: active.consolidated };
@@ -56,6 +52,12 @@ export async function requireUser(role?: "ADMIN" | "OPERATOR") {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (role && user.role !== role) throw new AppError("Você não tem permissão para esta ação.", 403, "FORBIDDEN");
+  return user;
+}
+
+export async function requirePlatformAdmin() {
+  const user = await requireUser();
+  if (!user.isPlatformAdmin) throw new AppError("Esta área é só do administrador do sistema.", 403, "FORBIDDEN");
   return user;
 }
 
