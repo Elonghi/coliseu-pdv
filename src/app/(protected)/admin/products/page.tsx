@@ -6,6 +6,7 @@ import { FilterBar, SearchField } from "@/components/filter-bar";
 import { Badge, EmptyState, Pagination, PageHeader } from "@/components/ui";
 import { pool } from "@/db";
 import { formatMoney } from "@/lib/money";
+import { stockQuantitySql } from "@/modules/stock/ledger";
 
 export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
@@ -21,12 +22,12 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
 
   const [products, categories] = await Promise.all([
-    pool.query<ProductRow>(`SELECT p.id,p.sku,p.name,p.sale_price_cents,p.stock_quantity,p.minimum_stock,p.active,p.image_key,c.name category,count(*) OVER()::int total_count
+    pool.query<ProductRow>(`SELECT p.id,p.sku,p.name,p.sale_price_cents,${stockQuantitySql("p")} AS stock_quantity,p.minimum_stock,p.active,p.image_key,c.name category,count(*) OVER()::int total_count
       FROM products p JOIN categories c ON c.id=p.category_id
       WHERE ($1='' OR p.name ILIKE $2 OR p.sku ILIKE $2 OR COALESCE(p.barcode,'') ILIKE $2)
         AND ($3='' OR p.category_id::text=$3)
         AND ($4='' OR ($4='active' AND p.active) OR ($4='inactive' AND NOT p.active))
-        AND ($5='' OR ($5='empty' AND p.stock_quantity=0) OR ($5='low' AND p.stock_quantity>0 AND p.stock_quantity<=p.minimum_stock))
+        AND ($5='' OR ($5='empty' AND ${stockQuantitySql("p")}=0) OR ($5='low' AND ${stockQuantitySql("p")}>0 AND ${stockQuantitySql("p")}<=p.minimum_stock))
       ORDER BY p.name LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}`, [q, `%${q}%`, category, status, stock]),
     pool.query<{ id: string; name: string }>("SELECT id,name FROM categories ORDER BY name"),
   ]);

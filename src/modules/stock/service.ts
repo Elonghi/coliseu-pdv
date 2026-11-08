@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
+import { lockProducts, lockStock, requireActiveStore, setStock } from "./ledger";
 
 type SplitProductInput = {
   sourceProductId: string;
@@ -19,12 +20,12 @@ export async function adjustStock(productId: string, delta: number, type: "MANUA
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const result = await client.query<{ stock_quantity: number }>("SELECT stock_quantity FROM products WHERE id=$1 FOR UPDATE", [productId]);
-    if (!result.rows[0]) throw new AppError("Produto não encontrado.", 404);
-    const previous = result.rows[0].stock_quantity;
+    const level = (await lockStock(client, [productId])).get(productId);
+    if (!level) throw new AppError("Produto não encontrado.", 404);
+    const previous = level.quantity;
     const next = previous + delta;
     if (next < 0) throw new AppError("O ajuste deixaria o estoque negativo.", 409, "NEGATIVE_STOCK");
-    await client.query("UPDATE products SET stock_quantity=$1,updated_at=now() WHERE id=$2", [next, productId]);
+    await setStock(client, productId, next);
     await client.query("INSERT INTO stock_movements (product_id,type,quantity_delta,previous_quantity,new_quantity,user_id,notes) VALUES ($1,$2,$3,$4,$5,$6,$7)", [productId, type, delta, previous, next, userId, notes.trim()]);
     await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'STOCK_ADJUST','product',$2,$3)", [userId, productId, JSON.stringify({ delta, type, notes })]);
     await client.query("COMMIT"); return { previous, next };
@@ -42,7 +43,9 @@ export async function splitProductIntoBoosters(input: SplitProductInput, userId:
   const client=await pool.connect();
   try {
     await client.query("BEGIN");
-    const sourceResult=await client.query<{id:string;sku:string;name:string;category_id:string;unit_id:string;cost_cents:number;stock_quantity:number;can_split_into_boosters:boolean;is_loose_booster:boolean}>(`SELECT id,sku,name,category_id,unit_id,cost_cents,stock_quantity,can_split_into_boosters,is_loose_booster FROM products WHERE id=$1 FOR UPDATE`,[input.sourceProductId]);
+    await requireActiveStore(client);
+    await lockProducts(client,[input.sourceProductId]);
+    const sourceResult=await client.query<{id:string;sku:string;name:string;category_id:string;unit_id:string;cost_cents:number;stock_quantity:number;can_split_into_boosters:boolean;is_loose_booster:boolean}>(`SELECT p.id,p.sku,p.name,p.category_id,p.unit_id,COALESCE(ps.cost_cents,p.cost_cents)::int AS cost_cents,COALESCE(ps.quantity,0)::int AS stock_quantity,p.can_split_into_boosters,p.is_loose_booster FROM products p LEFT JOIN product_stock ps ON ps.product_id=p.id AND ps.store_id=app_current_store() WHERE p.id=$1 FOR UPDATE OF p`,[input.sourceProductId]);
     const source=sourceResult.rows[0];
     if(!source)throw new AppError("Produto de origem não encontrado.",404);
     if(source.is_loose_booster)throw new AppError("Um booster avulso não pode ser dividido novamente.",409,"LOOSE_BOOSTER");
@@ -50,7 +53,8 @@ export async function splitProductIntoBoosters(input: SplitProductInput, userId:
     if(source.stock_quantity<input.sourceQuantity)throw new AppError(`Estoque insuficiente: há ${source.stock_quantity} unidade(s) disponível(is), mas foram solicitadas ${input.sourceQuantity}.`,409,"INSUFFICIENT_STOCK");
 
     const outputUnitCostCents=Math.round(source.cost_cents/input.boostersPerSource);
-    const namedProducts=await client.query<{id:string;stock_quantity:number;cost_cents:number;is_loose_booster:boolean}>(`SELECT id,stock_quantity,cost_cents,is_loose_booster FROM products WHERE lower(name)=lower($1) ORDER BY is_loose_booster DESC,created_at FOR UPDATE`,[outputName]);
+    await client.query("SELECT id FROM products WHERE lower(name)=lower($1) ORDER BY id FOR UPDATE",[outputName]);
+    const namedProducts=await client.query<{id:string;stock_quantity:number;cost_cents:number;is_loose_booster:boolean}>(`SELECT p.id,COALESCE(ps.quantity,0)::int AS stock_quantity,COALESCE(ps.cost_cents,p.cost_cents)::int AS cost_cents,p.is_loose_booster FROM products p LEFT JOIN product_stock ps ON ps.product_id=p.id AND ps.store_id=app_current_store() WHERE lower(p.name)=lower($1) ORDER BY p.is_loose_booster DESC,p.created_at FOR UPDATE OF p`,[outputName]);
     const existing=namedProducts.rows.find(product=>product.is_loose_booster);
     if(!existing&&namedProducts.rowCount)throw new AppError("Já existe um produto com este nome que não está marcado como booster avulso.",409,"PRODUCT_NAME_CONFLICT");
 
@@ -61,20 +65,22 @@ export async function splitProductIntoBoosters(input: SplitProductInput, userId:
       outputProductId=existing.id;outputPrevious=existing.stock_quantity;outputNext+=outputPrevious;
       if(outputNext>POSTGRES_INTEGER_MAX)throw new AppError("O estoque resultante de boosters excede o limite permitido.",422);
       const averageCost=Math.round((existing.cost_cents*outputPrevious+source.cost_cents*input.sourceQuantity)/outputNext);
-      await client.query("UPDATE products SET cost_cents=$1,sale_price_cents=$2,stock_quantity=$3,active=true,updated_at=now() WHERE id=$4",[averageCost,input.outputSalePriceCents,outputNext,outputProductId]);
+      await client.query("UPDATE products SET sale_price_cents=$1,active=true,updated_at=now() WHERE id=$2",[input.outputSalePriceCents,outputProductId]);
+      await setStock(client,outputProductId,outputNext,averageCost);
     }else{
       const packageUnit=await client.query<{id:string}>("SELECT id FROM units WHERE code='PCT' AND active=true LIMIT 1");
       const sku=`BST-${randomUUID().slice(0,8).toUpperCase()}`;
       outputProductId=(await client.query<{id:string}>(`INSERT INTO products
         (sku,name,description,category_id,unit_id,cost_cents,sale_price_cents,max_discount_bps,stock_quantity,minimum_stock,is_loose_booster,active)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,0,true,true) RETURNING id`,[sku,outputName,`Booster avulso gerado pela abertura de ${source.name}.`,source.category_id,packageUnit.rows[0]?.id??source.unit_id,outputUnitCostCents,input.outputSalePriceCents,outputQuantity])).rows[0].id;
+        VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,0,true,true) RETURNING id`,[sku,outputName,`Booster avulso gerado pela abertura de ${source.name}.`,source.category_id,packageUnit.rows[0]?.id??source.unit_id,outputUnitCostCents,input.outputSalePriceCents])).rows[0].id;
+      await setStock(client,outputProductId,outputQuantity,outputUnitCostCents);
     }
 
     const sourceNext=source.stock_quantity-input.sourceQuantity;
     const splitId=(await client.query<{id:string}>(`INSERT INTO product_splits
       (source_product_id,output_product_id,source_quantity,output_quantity,source_unit_cost_cents,output_unit_cost_cents,output_sale_price_cents,user_id)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[source.id,outputProductId,input.sourceQuantity,outputQuantity,source.cost_cents,outputUnitCostCents,input.outputSalePriceCents,userId])).rows[0].id;
-    await client.query("UPDATE products SET stock_quantity=$1,updated_at=now() WHERE id=$2",[sourceNext,source.id]);
+    await setStock(client,source.id,sourceNext);
     await client.query(`INSERT INTO stock_movements (product_id,type,quantity_delta,previous_quantity,new_quantity,product_split_id,user_id,notes) VALUES
       ($1,'BOX_SPLIT_OUT',$2,$3,$4,$5,$6,$7),($8,'BOOSTER_SPLIT_IN',$9,$10,$11,$5,$6,$12)`,[source.id,-input.sourceQuantity,source.stock_quantity,sourceNext,splitId,userId,`Abertura de ${input.sourceQuantity} unidade(s), com ${input.boostersPerSource} boosters por unidade.`,outputProductId,outputQuantity,outputPrevious,outputNext,`Gerados pela abertura de ${source.name}.`]);
     await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'PRODUCT_SPLIT','product_split',$2,$3)",[userId,splitId,JSON.stringify({sourceProductId:source.id,outputProductId,sourceQuantity:input.sourceQuantity,boostersPerSource:input.boostersPerSource,outputQuantity,sourceUnitCostCents:source.cost_cents,outputUnitCostCents,outputSalePriceCents:input.outputSalePriceCents})]);

@@ -1,4 +1,5 @@
 import { pool } from "@/db";
+import { lockProducts, lockStock, requireActiveStore, setStock, enterStore } from "@/modules/stock/ledger";
 import { AppError } from "@/lib/errors";
 import { calculateDiscount, saleNumber } from "@/lib/money";
 import { checkoutSchema, type CheckoutInput } from "./schemas";
@@ -14,7 +15,9 @@ export async function createSale(input: CheckoutInput, operatorId: string) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const locked = await client.query<LockedProduct>(`SELECT p.id,p.sku,p.name,p.active,p.stock_quantity,p.sale_price_cents,p.cost_cents,p.max_discount_bps,u.code AS unit_code FROM products p JOIN units u ON u.id=p.unit_id WHERE p.id=ANY($1::uuid[]) ORDER BY p.id FOR UPDATE OF p`, [[...productIds].sort()]);
+    await requireActiveStore(client);
+    await lockProducts(client, productIds);
+    const locked = await client.query<LockedProduct>(`SELECT p.id,p.sku,p.name,p.active,COALESCE(ps.quantity,0)::int AS stock_quantity,p.sale_price_cents,COALESCE(ps.cost_cents,p.cost_cents)::int AS cost_cents,p.max_discount_bps,u.code AS unit_code FROM products p JOIN units u ON u.id=p.unit_id LEFT JOIN product_stock ps ON ps.product_id=p.id AND ps.store_id=app_current_store() WHERE p.id=ANY($1::uuid[]) ORDER BY p.id FOR UPDATE OF p`, [[...productIds].sort()]);
     if (locked.rowCount !== parsed.items.length) throw new AppError("Um produto do carrinho não existe.", 422, "PRODUCT_NOT_FOUND");
     const byId = new Map(locked.rows.map((p) => [p.id, p]));
     const calculated = parsed.items.map((item) => {
@@ -52,7 +55,7 @@ export async function createSale(input: CheckoutInput, operatorId: string) {
       const p = item.product;
       await client.query(`INSERT INTO sale_items (sale_id,product_id,product_name,sku,unit_code,quantity,unit_price_cents,unit_cost_cents,discount_bps,gross_cents,discount_cents,total_cents) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [sale.id, p.id, p.name, p.sku, p.unit_code, item.quantity, p.sale_price_cents, p.cost_cents, item.discountBasisPoints, item.grossCents, item.discountCents, item.totalCents]);
       const next = p.stock_quantity - item.quantity;
-      await client.query("UPDATE products SET stock_quantity=$1,updated_at=now() WHERE id=$2", [next, p.id]);
+      await setStock(client, p.id, next);
       await client.query("INSERT INTO stock_movements (product_id,type,quantity_delta,previous_quantity,new_quantity,sale_id,user_id,notes) VALUES ($1,'SALE',$2,$3,$4,$5,$6,$7)", [p.id, -item.quantity, p.stock_quantity, next, sale.id, operatorId, `Venda ${saleNumber(sale.id)}`]);
     }
     const paymentSummary = [];
@@ -83,18 +86,18 @@ export async function cancelSale(saleId: number, reason: string, adminId: string
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const saleResult = await client.query<{ id: number; status: string }>("SELECT id,status FROM sales WHERE id=$1 FOR UPDATE", [saleId]);
+    const saleResult = await client.query<{ id: number; status: string; store_id: string }>("SELECT id,status,store_id FROM sales WHERE id=$1 FOR UPDATE", [saleId]);
     const sale = saleResult.rows[0];
     if (!sale) throw new AppError("Venda não encontrada.", 404, "SALE_NOT_FOUND");
+    await enterStore(client, sale.store_id);
     if (sale.status === "CANCELED") throw new AppError("Esta venda já foi cancelada.", 409, "ALREADY_CANCELED");
     const items = await client.query<{ product_id: string; quantity: number }>("SELECT product_id,quantity FROM sale_items WHERE sale_id=$1 ORDER BY product_id", [saleId]);
     const ids = items.rows.map((i) => i.product_id);
-    const products = await client.query<{ id: string; stock_quantity: number }>("SELECT id,stock_quantity FROM products WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE", [ids]);
-    const stock = new Map(products.rows.map((p) => [p.id, p.stock_quantity]));
+    const stock = new Map([...(await lockStock(client, ids))].map(([id, level]) => [id, level.quantity]));
     for (const item of items.rows) {
       const previous = stock.get(item.product_id)!;
       const next = previous + item.quantity;
-      await client.query("UPDATE products SET stock_quantity=$1,updated_at=now() WHERE id=$2", [next, item.product_id]);
+      await setStock(client, item.product_id, next);
       await client.query("INSERT INTO stock_movements (product_id,type,quantity_delta,previous_quantity,new_quantity,sale_id,user_id,notes) VALUES ($1,'SALE_CANCELLATION',$2,$3,$4,$5,$6,$7)", [item.product_id, item.quantity, previous, next, saleId, adminId, reason]);
     }
     const specialPayments = await client.query<{ method_code: string; player_id: string; amount_applied_cents: number }>("SELECT method_code,player_id,amount_applied_cents FROM payments WHERE sale_id=$1 AND method_code IN ('PLAYER_CREDIT','FUTURE') ORDER BY method_code", [saleId]);

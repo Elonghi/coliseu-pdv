@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["ADMIN", "OPERATOR"]);
 export const saleStatus = pgEnum("sale_status", ["CONFIRMED", "CANCELED"]);
@@ -117,6 +117,20 @@ export const products = pgTable("products", {
   check("products_discount_valid", sql`${t.maxDiscountBps} BETWEEN 0 AND 10000`),
   check("products_stock_nonnegative", sql`${t.stockQuantity} >= 0 AND ${t.minimumStock} >= 0`),
   index("products_name_idx").on(t.name), index("products_active_idx").on(t.active), index("products_category_idx").on(t.categoryId),
+]);
+
+/* Saldo e custo médio de cada produto em cada loja. O produto (catálogo) pode ser compartilhado entre as lojas do lojista;
+ * o estoque nunca é. products.stock_quantity continua existindo como total, mantido por gatilho (ver migration 0016). */
+export const productStock = pgTable("product_stock", {
+  productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  quantity: integer("quantity").default(0).notNull(),
+  costCents: integer("cost_cents").default(0).notNull(),
+  ...timestamps,
+}, (t) => [
+  primaryKey({ columns: [t.storeId, t.productId] }),
+  index("product_stock_product_idx").on(t.productId),
+  check("product_stock_values_valid", sql`${t.quantity} >= 0 AND ${t.costCents} >= 0`),
 ]);
 
 export const supplierProductMappings = pgTable("supplier_product_mappings", {

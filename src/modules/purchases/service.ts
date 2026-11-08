@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
+import { setStock, enterStore } from "@/modules/stock/ledger";
 
 export async function createSupplier(input: unknown, userId: string) {
   const parsed = z.object({
@@ -41,19 +42,21 @@ export async function receivePurchaseOrder(orderId:string,quantities:{itemId:str
   const client=await pool.connect();
   try{
     await client.query("BEGIN");
-    const order=await client.query<{fiscal_invoice_id:string|null}>("SELECT fiscal_invoice_id FROM purchase_orders WHERE id=$1 AND status IN ('SENT','PARTIAL') FOR UPDATE",[orderId]);
+    const order=await client.query<{fiscal_invoice_id:string|null;store_id:string}>("SELECT fiscal_invoice_id,store_id FROM purchase_orders WHERE id=$1 AND status IN ('SENT','PARTIAL') FOR UPDATE",[orderId]);
     if(!order.rows[0])throw new AppError("Pedido não está disponível para recebimento.",409);
+    await enterStore(client,order.rows[0].store_id);
     if(order.rows[0].fiscal_invoice_id)throw new AppError("Pedido vinculado a NF-e é recebido automaticamente pela nota.",409);
     const requested=new Map(quantities.filter(item=>Number.isInteger(item.quantity)&&item.quantity>0).map(item=>[item.itemId,item.quantity]));
     if(!requested.size)throw new AppError("Informe ao menos uma quantidade recebida.");
-    const items=await client.query<{id:string;product_id:string;ordered_quantity:number;received_quantity:number;unit_cost_cents:number;stock_quantity:number;cost_cents:number}>(`SELECT poi.id,poi.product_id,poi.ordered_quantity,poi.received_quantity,poi.unit_cost_cents,p.stock_quantity,p.cost_cents FROM purchase_order_items poi JOIN products p ON p.id=poi.product_id WHERE poi.order_id=$1 ORDER BY poi.product_id FOR UPDATE OF poi,p`,[orderId]);
+    await client.query("SELECT p.id FROM purchase_order_items poi JOIN products p ON p.id=poi.product_id WHERE poi.order_id=$1 ORDER BY p.id FOR UPDATE OF p",[orderId]);
+    const items=await client.query<{id:string;product_id:string;ordered_quantity:number;received_quantity:number;unit_cost_cents:number;stock_quantity:number;cost_cents:number}>(`SELECT poi.id,poi.product_id,poi.ordered_quantity,poi.received_quantity,poi.unit_cost_cents,COALESCE(ps.quantity,0)::int AS stock_quantity,COALESCE(ps.cost_cents,p.cost_cents)::int AS cost_cents FROM purchase_order_items poi JOIN products p ON p.id=poi.product_id LEFT JOIN product_stock ps ON ps.product_id=p.id AND ps.store_id=app_current_store() WHERE poi.order_id=$1 ORDER BY poi.product_id FOR UPDATE OF poi,p`,[orderId]);
     for(const item of items.rows){
       const quantity=requested.get(item.id)??0;
       if(!quantity)continue;
       if(item.received_quantity+quantity>item.ordered_quantity)throw new AppError("Quantidade recebida supera a quantidade pedida.",409);
       const nextStock=item.stock_quantity+quantity;
       const average=Math.round((item.cost_cents*item.stock_quantity+item.unit_cost_cents*quantity)/nextStock);
-      await client.query("UPDATE products SET stock_quantity=$1,cost_cents=$2,updated_at=now() WHERE id=$3",[nextStock,average,item.product_id]);
+      await setStock(client,item.product_id,nextStock,average);
       await client.query("UPDATE purchase_order_items SET received_quantity=received_quantity+$1,updated_at=now() WHERE id=$2",[quantity,item.id]);
       await client.query("INSERT INTO stock_movements(product_id,type,quantity_delta,previous_quantity,new_quantity,user_id,notes) VALUES ($1,'PURCHASE_RECEIPT',$2,$3,$4,$5,$6)",[item.product_id,quantity,item.stock_quantity,nextStock,userId,`Recebimento do pedido ${orderId}`]);
     }

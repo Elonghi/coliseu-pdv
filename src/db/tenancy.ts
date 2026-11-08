@@ -32,6 +32,7 @@ export const tenancy = {
   payments: "STORE",
   product_splits: "STORE",
   stock_movements: "STORE",
+  product_stock: "STORE",
   inventory_counts: "STORE",
   inventory_count_items: "STORE",
   purchase_orders: "STORE",

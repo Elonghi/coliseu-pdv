@@ -9,6 +9,7 @@ import { formatDate, formatSigned } from "@/lib/format";
 import { formatMoney } from "@/lib/money";
 import { queryHref } from "@/lib/query-string";
 import { splitProductAction, stockAction } from "@/modules/admin/actions";
+import { stockCostSql, stockQuantitySql } from "@/modules/stock/ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -40,16 +41,16 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const status = query.status === "low" || query.status === "empty" ? query.status : "all";
   const movementType = query.type && query.type in movementLabel ? query.type : "";
   const q = query.q?.trim().slice(0, 120) ?? "";
-  const statusCondition = status === "empty" ? "AND p.stock_quantity=0" : status === "low" ? "AND p.stock_quantity>0 AND p.stock_quantity<=p.minimum_stock" : "";
+  const statusCondition = status === "empty" ? `AND ${stockQuantitySql("p")}=0` : status === "low" ? `AND ${stockQuantitySql("p")}>0 AND ${stockQuantitySql("p")}<=p.minimum_stock` : "";
   const PRODUCT_LIMIT = 500;
 
   const [counts, sourceProducts, allProducts, products, movements, dormant, splits] = await Promise.all([
-    pool.query<{ total: number; active_count: number; empty: number; low: number; value_cents: number }>("SELECT count(*)::int total,count(*) FILTER (WHERE active)::int active_count,count(*) FILTER (WHERE stock_quantity=0)::int empty,count(*) FILTER (WHERE stock_quantity>0 AND stock_quantity<=minimum_stock)::int low,COALESCE(sum(stock_quantity::bigint*cost_cents),0)::float8 value_cents FROM products"),
-    pool.query<{ id: string; sku: string; name: string; stock_quantity: number; cost_cents: number }>("SELECT id,sku,name,stock_quantity,cost_cents FROM products WHERE can_split_into_boosters=true AND is_loose_booster=false AND stock_quantity>0 ORDER BY name"),
+    pool.query<{ total: number; active_count: number; empty: number; low: number; value_cents: number }>(`SELECT count(*)::int total,count(*) FILTER (WHERE active)::int active_count,count(*) FILTER (WHERE q=0)::int empty,count(*) FILTER (WHERE q>0 AND q<=minimum_stock)::int low,COALESCE(sum(q::bigint*c),0)::float8 value_cents FROM (SELECT p.active,p.minimum_stock,${stockQuantitySql("p")} q,${stockCostSql("p")} c FROM products p) x`),
+    pool.query<{ id: string; sku: string; name: string; stock_quantity: number; cost_cents: number }>(`SELECT p.id,p.sku,p.name,${stockQuantitySql("p")} AS stock_quantity,${stockCostSql("p")} AS cost_cents FROM products p WHERE p.can_split_into_boosters=true AND p.is_loose_booster=false AND ${stockQuantitySql("p")}>0 ORDER BY p.name`),
     pool.query<{ id: string; sku: string; name: string }>("SELECT id,sku,name FROM products ORDER BY active DESC,name"),
-    tab === "produtos" ? pool.query<ProductRow>(`SELECT p.id,p.sku,p.name,p.stock_quantity,p.minimum_stock,p.cost_cents,p.active,p.is_loose_booster FROM products p WHERE ($1='' OR p.name ILIKE $2 OR p.sku ILIKE $2) ${statusCondition} ORDER BY p.active DESC,p.name LIMIT ${PRODUCT_LIMIT}`, [q, `%${q}%`]) : null,
+    tab === "produtos" ? pool.query<ProductRow>(`SELECT p.id,p.sku,p.name,${stockQuantitySql("p")} AS stock_quantity,p.minimum_stock,${stockCostSql("p")} AS cost_cents,p.active,p.is_loose_booster FROM products p WHERE ($1='' OR p.name ILIKE $2 OR p.sku ILIKE $2) ${statusCondition} ORDER BY p.active DESC,p.name LIMIT ${PRODUCT_LIMIT}`, [q, `%${q}%`]) : null,
     tab === "movimentos" ? pool.query<MovementRow>("SELECT sm.id,sm.type,sm.quantity_delta,sm.previous_quantity,sm.new_quantity,sm.notes,sm.created_at,p.name product,COALESCE(u.name,'Automático') username FROM stock_movements sm JOIN products p ON p.id=sm.product_id LEFT JOIN users u ON u.id=sm.user_id WHERE ($1='' OR p.name ILIKE $2 OR p.sku ILIKE $2) AND ($3='' OR sm.type::text=$3) ORDER BY sm.created_at DESC LIMIT 100", [q, `%${q}%`, movementType]) : null,
-    tab === "parado" ? pool.query<DormantRow>("SELECT p.id,p.sku,p.name,p.stock_quantity,p.cost_cents,(p.stock_quantity*p.cost_cents)::int tied_cents,max(s.created_at) last_sale_at FROM products p LEFT JOIN sale_items si ON si.product_id=p.id LEFT JOIN sales s ON s.id=si.sale_id AND s.status='CONFIRMED' WHERE p.active=true AND p.stock_quantity>0 GROUP BY p.id HAVING max(s.created_at) IS NULL OR max(s.created_at)<now()-interval '90 days' ORDER BY tied_cents DESC LIMIT 50") : null,
+    tab === "parado" ? pool.query<DormantRow>(`SELECT x.id,x.sku,x.name,x.stock_quantity,x.cost_cents,(x.stock_quantity*x.cost_cents)::int tied_cents,x.last_sale_at FROM (SELECT p.id,p.sku,p.name,${stockQuantitySql("p")} AS stock_quantity,${stockCostSql("p")} AS cost_cents,max(s.created_at) last_sale_at FROM products p LEFT JOIN sale_items si ON si.product_id=p.id LEFT JOIN sales s ON s.id=si.sale_id AND s.status='CONFIRMED' WHERE p.active=true GROUP BY p.id) x WHERE x.stock_quantity>0 AND (x.last_sale_at IS NULL OR x.last_sale_at<now()-interval '90 days') ORDER BY tied_cents DESC LIMIT 50`) : null,
     tab === "aberturas" ? pool.query<SplitRow>("SELECT ps.id,s.name source_name,o.name output_name,ps.source_quantity,ps.output_quantity,ps.source_unit_cost_cents,ps.output_unit_cost_cents,ps.output_sale_price_cents,ps.created_at,u.name user_name FROM product_splits ps JOIN products s ON s.id=ps.source_product_id JOIN products o ON o.id=ps.output_product_id JOIN users u ON u.id=ps.user_id ORDER BY ps.created_at DESC LIMIT 30") : null,
   ]);
   const summary = counts.rows[0];

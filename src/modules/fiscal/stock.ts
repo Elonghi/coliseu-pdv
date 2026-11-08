@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isSplittableSealedProduct } from "@/modules/catalog/classification";
+import { lockStock, setStock, enterStore } from "@/modules/stock/ledger";
 
 type FiscalStockInput = {
   invoiceId: string;
@@ -113,17 +114,17 @@ async function enterFiscalItem(client: PoolClient, item: FiscalItemRow, input: F
   const received = receivedQuantity ?? quantity;
   const enteredCost = received === quantity ? totalCost : Math.round((totalCost * received) / quantity);
   const { productId } = await resolveProduct(client, item, input, unitCostCents);
-  const product = await client.query<{ stock_quantity: number; cost_cents: number }>("SELECT stock_quantity,cost_cents FROM products WHERE id=$1 FOR UPDATE", [productId]);
+  const level = (await lockStock(client, [productId])).get(productId)!;
   const existing = await client.query("SELECT 1 FROM stock_movements WHERE fiscal_invoice_item_id=$1 AND type='FISCAL_ENTRY'", [item.id]);
   if (existing.rowCount) {
     await client.query("UPDATE fiscal_invoice_items SET product_id=$1,stock_import_error=NULL WHERE id=$2", [productId, item.id]);
     return "already";
   }
-  const previous = product.rows[0].stock_quantity;
+  const previous = level.quantity;
   const next = previous + received;
-  const averageCost = next === 0 ? unitCostCents : Math.round((previous * product.rows[0].cost_cents + enteredCost) / next);
+  const averageCost = next === 0 ? unitCostCents : Math.round((previous * level.costCents + enteredCost) / next);
   const reference = input.number ?? input.accessKey;
-  await client.query("UPDATE products SET stock_quantity=$1,cost_cents=$2,updated_at=now() WHERE id=$3", [next, averageCost, productId]);
+  await setStock(client, productId, next, averageCost);
   await client.query(`INSERT INTO stock_movements (product_id,type,quantity_delta,previous_quantity,new_quantity,fiscal_invoice_item_id,user_id,notes)
     VALUES ($1,'FISCAL_ENTRY',$2,$3,$4,$5,$6,$7)`, [productId, received, previous, next, item.id, input.actorId ?? null, received === quantity ? `Entrada confirmada da NF-e ${reference}` : `Entrada parcial da NF-e ${reference}: recebidas ${received} de ${quantity}`]);
   await client.query("UPDATE fiscal_invoice_items SET product_id=$1,stock_unit_cost_cents=$2,stock_imported_at=now(),stock_reversed_at=NULL,stock_import_error=NULL WHERE id=$3", [productId, unitCostCents, item.id]);
@@ -149,11 +150,12 @@ export async function importFiscalInvoiceToStock(client: PoolClient, input: Fisc
 async function lockEntryInvoice(client: PoolClient, invoiceId: string) {
   const invoice = await client.query<{
     id: string; access_key: string; number: string | null; status: string; has_full_xml: boolean;
-    issuer_cnpj_cpf: string | null; issuer_name: string | null; recipient_cnpj_cpf: string | null; company_cnpj: string;
-  }>(`SELECT f.id,f.access_key,f.number,f.status,f.has_full_xml,f.issuer_cnpj_cpf,f.issuer_name,f.recipient_cnpj_cpf,s.company_cnpj
+    issuer_cnpj_cpf: string | null; issuer_name: string | null; recipient_cnpj_cpf: string | null; company_cnpj: string; store_id: string;
+  }>(`SELECT f.id,f.access_key,f.number,f.status,f.has_full_xml,f.issuer_cnpj_cpf,f.issuer_name,f.recipient_cnpj_cpf,s.company_cnpj,f.store_id
     FROM fiscal_invoices f JOIN sefaz_sync_states s ON s.id=f.sync_state_id WHERE f.id=$1 FOR UPDATE OF f`, [invoiceId]);
   const note = invoice.rows[0];
   if (!note) throw new AppError("Nota fiscal não encontrada.", 404);
+  await enterStore(client, note.store_id);
   if (!note.has_full_xml) throw new AppError("Obtenha o XML completo antes de dar entrada no estoque.", 409);
   if (note.status !== "AUTHORIZED") throw new AppError("Somente uma NF-e autorizada pode dar entrada no estoque.", 409);
   const recipient = note.recipient_cnpj_cpf?.replace(/\D/g, "");
@@ -241,20 +243,21 @@ export async function receiveFiscalInvoiceItems(invoiceId: string, decisions: Fi
 }
 
 export async function cancelFiscalInvoiceStock(client: PoolClient, invoiceId: string, actorId?: string) {
+  const owner = await client.query<{ store_id: string }>("SELECT store_id FROM fiscal_invoices WHERE id=$1", [invoiceId]);
+  if (owner.rows[0]) await enterStore(client, owner.rows[0].store_id);
   const entries = await client.query<{ item_id: string; product_id: string; quantity_delta: number }>(`SELECT i.id item_id,m.product_id,m.quantity_delta
     FROM fiscal_invoice_items i JOIN stock_movements m ON m.fiscal_invoice_item_id=i.id AND m.type='FISCAL_ENTRY'
     WHERE i.invoice_id=$1 AND NOT EXISTS (SELECT 1 FROM stock_movements r WHERE r.fiscal_invoice_item_id=i.id AND r.type='FISCAL_CANCELLATION')
     ORDER BY m.product_id,i.item_number`, [invoiceId]);
   for (const entry of entries.rows) {
-    const product = await client.query<{ stock_quantity: number }>("SELECT stock_quantity FROM products WHERE id=$1 FOR UPDATE", [entry.product_id]);
-    const previous = product.rows[0].stock_quantity;
+    const previous = (await lockStock(client, [entry.product_id])).get(entry.product_id)!.quantity;
     if (previous < entry.quantity_delta) {
       await client.query("UPDATE fiscal_invoice_items SET stock_import_error=$1 WHERE id=$2", [`Cancelamento fiscal não estornado: saldo atual ${previous}, entrada original ${entry.quantity_delta}.`, entry.item_id]);
       await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'FISCAL_STOCK_CANCELLATION_PENDING','fiscal_invoice_item',$2,$3)", [actorId ?? null, entry.item_id, JSON.stringify({ invoiceId, productId: entry.product_id, currentQuantity: previous, originalEntry: entry.quantity_delta })]);
       continue;
     }
     const next = previous - entry.quantity_delta;
-    await client.query("UPDATE products SET stock_quantity=$1,updated_at=now() WHERE id=$2", [next, entry.product_id]);
+    await setStock(client, entry.product_id, next);
     await client.query(`INSERT INTO stock_movements (product_id,type,quantity_delta,previous_quantity,new_quantity,fiscal_invoice_item_id,user_id,notes)
       VALUES ($1,'FISCAL_CANCELLATION',$2,$3,$4,$5,$6,'Estorno automático por cancelamento da NF-e')`, [entry.product_id, -entry.quantity_delta, previous, next, entry.item_id, actorId ?? null]);
     await client.query("UPDATE fiscal_invoice_items SET stock_reversed_at=now(),stock_import_error=NULL WHERE id=$1", [entry.item_id]);
