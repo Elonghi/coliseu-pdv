@@ -220,6 +220,8 @@ test.describe.serial("fluxos essenciais", () => {
       await expect(page.locator(".admin-footer")).toContainText("Todas as lojas (2)");
       const switcher = page.getByLabel("Loja ativa");
       await expect(switcher).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Por loja" })).toBeVisible();
+      await expect(page.getByRole("cell", { name: "Loja E2E" })).toBeVisible();
 
       // na visão de todas as lojas só se lê: gravar pede para escolher a loja
       await page.goto("/admin/cash");
@@ -246,6 +248,84 @@ test.describe.serial("fluxos essenciais", () => {
       await db.query("DELETE FROM cash_registers WHERE name=$1", [registerName]);
       await db.query("DELETE FROM user_stores WHERE store_id=$1", [second]);
       await db.query("DELETE FROM stores WHERE id=$1", [second]);
+      await db.end();
+    }
+  });
+  test("o administrador do sistema cria um lojista novo, que só enxerga o que é dele", async ({ page, browser }) => {
+    test.skip(!process.env.DATABASE_URL, "precisa acessar o banco para dar o acesso de administrador do sistema");
+    const enforced = Boolean(process.env.APP_DATABASE_URL);
+    const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
+    const stamp = Date.now();
+    const ownerEmail = `titular-${stamp}@novolojista.test`;
+    const ownerPassword = "SenhaProvisoria-2026";
+    await db.query("UPDATE users SET is_platform_admin=true WHERE lower(email)=lower($1)", [adminEmail]);
+    try {
+      await login(page, adminEmail, seedPassword);
+      await page.goto("/plataforma");
+      await expect(page.getByRole("heading", { name: "Lojistas", exact: true })).toBeVisible();
+      await expect(page.getByText(enforced ? "Isolamento entre lojistas no banco: ativo" : "Isolamento entre lojistas no banco: NÃO está valendo")).toBeVisible();
+
+      await page.getByRole("button", { name: "Novo lojista" }).click();
+      const form = page.getByRole("dialog");
+      await form.getByLabel("Nome do lojista (cliente)").fill(`Lojista E2E ${stamp}`);
+      await form.getByLabel("Nome da loja").fill("Loja Centro E2E");
+      await form.getByLabel("Nome", { exact: true }).fill("Titular E2E");
+      await form.getByLabel("E-mail", { exact: true }).fill(ownerEmail);
+      await form.getByLabel("Senha provisória").fill(ownerPassword);
+      await form.getByRole("button", { name: "Criar lojista" }).click();
+
+      if (!enforced) {
+        // sem as travas valendo, o segundo lojista é recusado com a orientação
+        await expect(page.getByText("ative o isolamento do banco")).toBeVisible();
+        return;
+      }
+      await expect(page.getByText("Lojista criado.")).toBeVisible();
+      await page.getByRole("row", { name: new RegExp(`Lojista E2E ${stamp}`) }).getByRole("link", { name: "Abrir" }).click();
+      await expect(page.getByRole("heading", { name: `Lojista E2E ${stamp}` })).toBeVisible();
+      await page.getByRole("button", { name: "Adicionar loja" }).click();
+      await page.getByRole("dialog").getByLabel("Nome da loja").fill("Loja Shopping E2E");
+      await page.getByRole("dialog").getByRole("button", { name: "Adicionar loja" }).click();
+      await expect(page.getByRole("cell", { name: "Loja Shopping E2E" })).toBeVisible();
+
+      // o titular novo entra, enxerga as duas lojas dele e nada do outro lojista
+      const context = await browser.newContext();
+      const titular = await context.newPage();
+      await login(titular, ownerEmail, ownerPassword);
+      await titular.goto("/admin");
+      await expect(titular.locator(".admin-footer")).toContainText("Todas as lojas (2)");
+      await expect(titular.getByLabel("Loja ativa")).toBeVisible();
+      await titular.goto("/admin/products");
+      await expect(titular.getByText("Coca-Cola")).toHaveCount(0);
+      await titular.goto("/admin/users");
+      await expect(titular.getByText(adminEmail)).toHaveCount(0);
+      await expect(titular.getByText(ownerEmail)).toBeVisible();
+      await titular.goto("/plataforma");
+      await expect(titular.getByRole("heading", { name: "Lojistas", exact: true })).toHaveCount(0);
+      await context.close();
+
+      // suspenso, o titular não entra mais
+      await page.getByRole("button", { name: "Suspender" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Suspender agora" }).click();
+      await expect(page.getByText("Lojista suspenso.")).toBeVisible();
+      const blocked = await browser.newContext();
+      const attempt = await blocked.newPage();
+      await attempt.goto("/login");
+      await attempt.getByLabel("E-mail corporativo").fill(ownerEmail);
+      await attempt.getByLabel("Senha", { exact: true }).fill(ownerPassword);
+      await attempt.getByRole("button", { name: "Entrar no sistema" }).click();
+      await expect(attempt.getByText("E-mail ou senha inválidos.")).toBeVisible();
+      await blocked.close();
+    } finally {
+      const created = await db.query<{ id: string }>("SELECT id FROM accounts WHERE name=$1", [`Lojista E2E ${stamp}`]);
+      for (const { id } of created.rows) {
+        await db.query("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE account_id=$1)", [id]);
+        await db.query("DELETE FROM audit_logs WHERE account_id=$1", [id]);
+        await db.query("DELETE FROM users WHERE account_id=$1", [id]);
+        await db.query("DELETE FROM stores WHERE account_id=$1", [id]);
+        await db.query("DELETE FROM accounts WHERE id=$1", [id]);
+      }
+      await db.query("UPDATE users SET is_platform_admin=false WHERE lower(email)=lower($1)", [adminEmail]);
       await db.end();
     }
   });

@@ -2,7 +2,7 @@ import { pool } from "@/db";
 import { stockQuantitySql } from "@/modules/stock/ledger";
 
 export async function getDashboard() {
-  const [kpis, stock, top, payments, daily, financial, cashFlow] = await Promise.all([
+  const [kpis, stock, top, payments, daily, financial, cashFlow, byStore] = await Promise.all([
     pool.query<{ today_cents: number; week_cents: number; month_cents: number; previous_month_cents: number; today_count: number; month_count: number; avg_cents: number }>(`SELECT
       COALESCE(sum(total_cents) FILTER (WHERE created_at >= date_trunc('day',now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'),0)::int AS today_cents,
       COALESCE(sum(total_cents) FILTER (WHERE created_at >= date_trunc('week',now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'),0)::int AS week_cents,
@@ -29,6 +29,14 @@ export async function getDashboard() {
       COALESCE(sum(fs.amount_cents) FILTER (WHERE a.type='PAYABLE'),0)::int AS paid_cents
       FROM days d LEFT JOIN financial_settlements fs ON (fs.occurred_at AT TIME ZONE 'America/Sao_Paulo')::date=d.report_date AND fs.reversed_at IS NULL
       LEFT JOIN financial_installments i ON i.id=fs.installment_id LEFT JOIN financial_accounts a ON a.id=i.account_id GROUP BY d.report_date ORDER BY d.report_date`),
+    // Resumo por loja, das lojas que a requisição enxerga: na visão de todas as lojas, cada uma em uma linha.
+    pool.query<{ id: string; name: string; today_cents: number; month_cents: number; month_count: number; stock_cents: number }>(`SELECT st.id,st.name,
+      COALESCE(sum(s.total_cents) FILTER (WHERE s.created_at >= date_trunc('day',now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'),0)::int AS today_cents,
+      COALESCE(sum(s.total_cents) FILTER (WHERE s.created_at >= date_trunc('month',now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'),0)::int AS month_cents,
+      count(s.id) FILTER (WHERE s.created_at >= date_trunc('month',now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')::int AS month_count,
+      COALESCE((SELECT sum(ps.quantity::bigint*ps.cost_cents) FROM product_stock ps WHERE ps.store_id=st.id),0)::float8 AS stock_cents
+      FROM stores st LEFT JOIN sales s ON s.store_id=st.id AND s.status='CONFIRMED'
+      WHERE st.active AND st.id=ANY(app_store_ids()) GROUP BY st.id,st.name ORDER BY month_cents DESC,st.name`),
   ]);
-  return { kpis: kpis.rows[0], stock: stock.rows[0], top: top.rows, payments: payments.rows, daily: daily.rows, financial: financial.rows[0], cashFlow: cashFlow.rows };
+  return { kpis: kpis.rows[0], stock: stock.rows[0], top: top.rows, payments: payments.rows, daily: daily.rows, financial: financial.rows[0], cashFlow: cashFlow.rows, byStore: byStore.rows };
 }

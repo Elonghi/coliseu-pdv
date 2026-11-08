@@ -20,7 +20,21 @@ export default async function DashboardPage() {
   const financeLink = (type: string) => link(permissions.FINANCE_MANAGE, `/admin/finance?type=${type}`);
 
   return <div className="section-gap">
-    <PageHeader eyebrow="Visão geral" title="Dashboard" description="Vendas, financeiro e alertas de estoque em um só lugar."/>
+    <PageHeader eyebrow="Visão geral" title="Dashboard" description={user.consolidated ? `Resumo de todas as suas ${user.stores.length} lojas juntas.` : "Vendas, financeiro e alertas de estoque em um só lugar."}/>
+
+    {user.consolidated && <section className="card" aria-label="Resumo por loja">
+      <div className="panel-head"><div><h2 className="panel-title">Por loja</h2><p className="panel-desc">Cada loja separada, para comparar. Os números abaixo somam todas elas.</p></div></div>
+      <div className="table-wrap"><table>
+        <thead><tr><th>Loja</th><th className="num">Hoje</th><th className="num">No mês</th><th className="num">Vendas no mês</th><th className="num">Estoque a custo</th></tr></thead>
+        <tbody>{data.byStore.map((store) => <tr key={store.id}>
+          <td className="cell-wrap"><b>{store.name}</b></td>
+          <td className="num">{formatMoney(store.today_cents)}</td>
+          <td className="num"><b>{formatMoney(store.month_cents)}</b></td>
+          <td className="num">{store.month_count}</td>
+          <td className="num">{formatMoney(store.stock_cents)}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </section>}
 
     <section className="grid gap-3" aria-label="Vendas">
       <h2 className="page-eyebrow">Vendas</h2>
