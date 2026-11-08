@@ -25,10 +25,12 @@ export default async function FiscalMovementsPage({ searchParams }: { searchPara
   const direction: Direction = query.direction === "EXIT" ? "EXIT" : "ENTRY";
   const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
   const perPage = 40;
-  if (!config.cnpj) return <div className="section-gap"><PageHeader eyebrow="Movimentação fiscal" title="Notas de entrada e saída"/><p className="notice-warn">Configure <b>SEFAZ_CNPJ</b> para separar as notas de entrada e saída da empresa.</p></div>;
+  // Cada loja tem o seu CNPJ (o da integração fiscal dela). O banco já devolve só as lojas da visão atual.
+  const companies = (await pool.query<{ company_cnpj: string }>("SELECT DISTINCT company_cnpj FROM sefaz_sync_states ORDER BY company_cnpj")).rows.map((row) => row.company_cnpj);
+  if (!companies.length && !config.cnpj) return <div className="section-gap"><PageHeader eyebrow="Movimentação fiscal" title="Notas de entrada e saída"/><p className="notice-warn">Importe um XML ou configure <b>SEFAZ_CNPJ</b> para separar as notas de entrada e saída da empresa.</p></div>;
 
-  const values: unknown[] = [config.cnpj];
-  const directionCondition = direction === "ENTRY" ? "(f.recipient_cnpj_cpf=$1 OR (f.recipient_cnpj_cpf IS NULL AND f.issuer_cnpj_cpf IS DISTINCT FROM $1))" : "f.issuer_cnpj_cpf=$1";
+  const values: unknown[] = [];
+  const directionCondition = direction === "ENTRY" ? "(f.recipient_cnpj_cpf=s.company_cnpj OR (f.recipient_cnpj_cpf IS NULL AND f.issuer_cnpj_cpf IS DISTINCT FROM s.company_cnpj))" : "f.issuer_cnpj_cpf=s.company_cnpj";
   const where = [directionCondition];
   if (query.q?.trim()) { values.push(`%${query.q.trim()}%`); where.push(`(f.access_key ILIKE $${values.length} OR f.number ILIKE $${values.length} OR f.issuer_name ILIKE $${values.length} OR f.recipient_name ILIKE $${values.length})`); }
   if (["AUTHORIZED", "CANCELED", "DENIED", "UNKNOWN"].includes(query.status ?? "")) { values.push(query.status); where.push(`f.status=$${values.length}`); }
@@ -37,9 +39,9 @@ export default async function FiscalMovementsPage({ searchParams }: { searchPara
   const condition = `WHERE ${where.join(" AND ")}`;
 
   const [invoices, count, metrics] = await Promise.all([
-    pool.query<InvoiceRow>(`SELECT f.id,f.access_key,f.has_full_xml,f.status,f.issue_at,f.model,f.series,f.number,f.total_cents::float8 AS total_cents,f.issuer_name,f.issuer_cnpj_cpf,f.recipient_name,f.recipient_cnpj_cpf FROM fiscal_invoices f ${condition} ORDER BY f.issue_at DESC NULLS LAST,f.created_at DESC LIMIT ${perPage} OFFSET ${(page - 1) * perPage}`, values),
-    pool.query<{ total: number }>(`SELECT count(*)::int total FROM fiscal_invoices f ${condition}`, values),
-    pool.query<{ total: number; authorized: number; complete: number; value_cents: number }>(`SELECT count(*)::int total,count(*) FILTER (WHERE f.status='AUTHORIZED')::int authorized,count(*) FILTER (WHERE f.has_full_xml)::int complete,COALESCE(sum(f.total_cents) FILTER (WHERE f.status='AUTHORIZED'),0)::float8 value_cents FROM fiscal_invoices f ${condition}`, values),
+    pool.query<InvoiceRow>(`SELECT f.id,f.access_key,f.has_full_xml,f.status,f.issue_at,f.model,f.series,f.number,f.total_cents::float8 AS total_cents,f.issuer_name,f.issuer_cnpj_cpf,f.recipient_name,f.recipient_cnpj_cpf FROM fiscal_invoices f JOIN sefaz_sync_states s ON s.id=f.sync_state_id ${condition} ORDER BY f.issue_at DESC NULLS LAST,f.created_at DESC LIMIT ${perPage} OFFSET ${(page - 1) * perPage}`, values),
+    pool.query<{ total: number }>(`SELECT count(*)::int total FROM fiscal_invoices f JOIN sefaz_sync_states s ON s.id=f.sync_state_id ${condition}`, values),
+    pool.query<{ total: number; authorized: number; complete: number; value_cents: number }>(`SELECT count(*)::int total,count(*) FILTER (WHERE f.status='AUTHORIZED')::int authorized,count(*) FILTER (WHERE f.has_full_xml)::int complete,COALESCE(sum(f.total_cents) FILTER (WHERE f.status='AUTHORIZED'),0)::float8 value_cents FROM fiscal_invoices f JOIN sefaz_sync_states s ON s.id=f.sync_state_id ${condition}`, values),
   ]);
   const total = count.rows[0]?.total ?? 0;
   const summary = metrics.rows[0] ?? { total: 0, authorized: 0, complete: 0, value_cents: 0 };
@@ -80,7 +82,7 @@ export default async function FiscalMovementsPage({ searchParams }: { searchPara
     </FilterBar>
 
     <section className="card">
-      <div className="panel-head"><div><h2 className="panel-title">{direction === "ENTRY" ? "Entradas" : "Saídas"}</h2><p className="panel-desc">{total} documento(s) encontrado(s)</p></div><Badge tone="info">CNPJ {formatFiscalDocument(config.cnpj)}</Badge></div>
+      <div className="panel-head"><div><h2 className="panel-title">{direction === "ENTRY" ? "Entradas" : "Saídas"}</h2><p className="panel-desc">{total} documento(s) encontrado(s)</p></div>{companies.map((company) => <Badge key={company} tone="info">CNPJ {formatFiscalDocument(company)}</Badge>)}</div>
       {invoices.rowCount ? <div className="table-wrap"><table>
         <thead><tr><th>Emissão</th><th>Nota</th><th>{counterpartLabel}</th><th className="num">Valor</th><th>Situação</th><th>Documento</th><th className="col-actions"><span className="sr-only">Ações</span></th></tr></thead>
         <tbody>

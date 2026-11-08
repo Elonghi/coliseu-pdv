@@ -367,6 +367,21 @@ test.describe.serial("fluxos essenciais", () => {
       await expect(titular.locator(".print-label").first()).toBeVisible();
       await titular.goto("/admin/fiscal");
       await expect(titular.locator("td", { hasText: "Distribuidora Cards e Games Ltda" }).first()).toBeVisible();
+      // As notas de cada loja têm o CNPJ da própria loja (não o do ambiente): todas são entradas e as pendentes aceitam a conferência.
+      await titular.goto("/admin/fiscal/movements");
+      const hrefs = await titular.locator("a", { hasText: "Detalhes" }).evaluateAll((links) => links.map((link) => link.getAttribute("href")!));
+      expect(hrefs.length).toBeGreaterThanOrEqual(6);
+      let pending: string | null = null;
+      for (const href of hrefs) {
+        await titular.goto(href);
+        await expect(titular.getByText("Nota sem entrada de estoque")).toHaveCount(0);
+        if (!pending && (await titular.getByRole("button", { name: "Dar entrada no estoque" }).count())) pending = href;
+      }
+      expect(pending, "nenhuma nota pendente oferece 'Dar entrada no estoque'").not.toBeNull();
+      await titular.goto(pending!);
+      await titular.getByRole("button", { name: "Dar entrada no estoque" }).click();
+      await titular.getByRole("dialog").getByRole("button", { name: "Confirmar conferência" }).click();
+      await expect(titular.getByText("Entrada concluída")).toBeVisible({ timeout: 30_000 });
       await titular.goto("/admin/products");
       await expect(titular.getByText("Play Booster Bloomburrow").first()).toBeVisible();
       await titularContext.close();

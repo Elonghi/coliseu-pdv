@@ -10,7 +10,6 @@ import { formatDateTime, formatDueDate } from "@/lib/format";
 import { formatMoney } from "@/lib/money";
 import { permissions } from "@/modules/auth/permissions";
 import { requirePermission } from "@/modules/auth/session";
-import { sefazPublicConfig } from "@/modules/fiscal/config";
 import { fiscalDirection, fiscalDirectionLabel } from "@/modules/fiscal/direction";
 import { fiscalItemMark } from "@/modules/fiscal/stock";
 import { fiscalReceiptAction } from "@/modules/fiscal/stock-actions";
@@ -36,7 +35,7 @@ export default async function FiscalInvoicePage({ params }: { params: Promise<{ 
   const user = await requirePermission(permissions.FISCAL_MANAGE);
   const { id } = await params;
   const [invoice, items, events, duplicates] = await Promise.all([
-    pool.query<{ id: string; access_key: string; has_full_xml: boolean; status: string; issuer_cnpj_cpf: string | null; issuer_name: string | null; issuer_state_registration: string | null; recipient_cnpj_cpf: string | null; recipient_name: string | null; recipient_state_registration: string | null; issue_at: Date | null; authorization_at: Date | null; operation_type: number | null; model: string | null; series: string | null; number: string | null; operation_nature: string | null; total_cents: number | null; protocol: string | null; manifestation_status: string | null; xml_version: string | null; original_file_name: string | null; origin: string }>("SELECT f.id,f.access_key,f.has_full_xml,f.status,f.issuer_cnpj_cpf,f.issuer_name,f.issuer_state_registration,f.recipient_cnpj_cpf,f.recipient_name,f.recipient_state_registration,f.issue_at,f.authorization_at,f.operation_type,f.model,f.series,f.number,f.operation_nature,f.total_cents::float8 AS total_cents,f.protocol,f.manifestation_status,f.xml_version,d.original_file_name,CASE WHEN d.import_batch_id IS NULL THEN 'SEFAZ' ELSE 'XML importado' END origin FROM fiscal_invoices f LEFT JOIN fiscal_dfe_documents d ON d.id=f.source_document_id WHERE f.id=$1", [id]),
+    pool.query<{ id: string; company_cnpj: string; access_key: string; has_full_xml: boolean; status: string; issuer_cnpj_cpf: string | null; issuer_name: string | null; issuer_state_registration: string | null; recipient_cnpj_cpf: string | null; recipient_name: string | null; recipient_state_registration: string | null; issue_at: Date | null; authorization_at: Date | null; operation_type: number | null; model: string | null; series: string | null; number: string | null; operation_nature: string | null; total_cents: number | null; protocol: string | null; manifestation_status: string | null; xml_version: string | null; original_file_name: string | null; origin: string }>("SELECT f.id,s.company_cnpj,f.access_key,f.has_full_xml,f.status,f.issuer_cnpj_cpf,f.issuer_name,f.issuer_state_registration,f.recipient_cnpj_cpf,f.recipient_name,f.recipient_state_registration,f.issue_at,f.authorization_at,f.operation_type,f.model,f.series,f.number,f.operation_nature,f.total_cents::float8 AS total_cents,f.protocol,f.manifestation_status,f.xml_version,d.original_file_name,CASE WHEN d.import_batch_id IS NULL THEN 'SEFAZ' ELSE 'XML importado' END origin FROM fiscal_invoices f JOIN sefaz_sync_states s ON s.id=f.sync_state_id LEFT JOIN fiscal_dfe_documents d ON d.id=f.source_document_id WHERE f.id=$1", [id]),
     pool.query<FiscalItem>(`SELECT i.id,i.item_number,i.product_code,i.ean,i.description,i.ncm,i.cfop,i.unit,i.quantity,i.unit_value_cents::float8 AS unit_value_cents,i.total_cents::float8 AS total_cents,i.discount_cents::float8 AS discount_cents,i.freight_cents::float8 AS freight_cents,i.insurance_cents::float8 AS insurance_cents,i.other_cents::float8 AS other_cents,i.product_id,p.name product_name,p.sku product_sku,p.active product_active,i.stock_unit_cost_cents,i.stock_imported_at,i.stock_reversed_at,i.stock_import_error,
       (SELECT m.quantity_delta FROM stock_movements m WHERE m.fiscal_invoice_item_id=i.id AND m.type='FISCAL_ENTRY' LIMIT 1) received_quantity
       FROM fiscal_invoice_items i LEFT JOIN products p ON p.id=i.product_id WHERE i.invoice_id=$1 ORDER BY i.item_number`, [id]),
@@ -46,8 +45,8 @@ export default async function FiscalInvoicePage({ params }: { params: Promise<{ 
   ]);
   const note = invoice.rows[0];
   if (!note) notFound();
-  const cnpj = sefazPublicConfig().cnpj;
-  const direction = cnpj ? fiscalDirection(cnpj, note.issuer_cnpj_cpf, note.recipient_cnpj_cpf) : null;
+  // O CNPJ de referência é o da loja dona da nota (o mesmo que a entrada de estoque confere), não o do ambiente: cada loja tem o seu.
+  const direction = fiscalDirection(note.company_cnpj, note.issuer_cnpj_cpf, note.recipient_cnpj_cpf);
 
   const stateOf = (item: FiscalItem) => {
     if (item.stock_reversed_at) return "reversed" as const;
@@ -90,7 +89,7 @@ export default async function FiscalInvoicePage({ params }: { params: Promise<{ 
     <section className="card panel-body"><dl className="kv">
       <div><dt>Emissão</dt><dd>{formatDateTime(note.issue_at)}</dd></div>
       <div><dt>Autorização</dt><dd>{formatDateTime(note.authorization_at)}</dd></div>
-      <div><dt>Movimento da loja</dt><dd>{direction ? fiscalDirectionLabel(direction) : "CNPJ não configurado"}<small className="block muted font-normal">Tipo informado pelo emitente: {note.operation_type === 0 ? "Entrada" : note.operation_type === 1 ? "Saída" : "—"}</small></dd></div>
+      <div><dt>Movimento da loja</dt><dd>{fiscalDirectionLabel(direction)}<small className="block muted font-normal">Tipo informado pelo emitente: {note.operation_type === 0 ? "Entrada" : note.operation_type === 1 ? "Saída" : "—"}</small></dd></div>
       <div><dt>Protocolo</dt><dd>{note.protocol ?? "—"}</dd></div>
       <div><dt>Valor total</dt><dd className="text-xl">{note.total_cents === null ? "—" : formatMoney(note.total_cents)}</dd></div>
       <div><dt>Natureza da operação</dt><dd>{note.operation_nature ?? "Disponível no XML completo"}</dd></div>

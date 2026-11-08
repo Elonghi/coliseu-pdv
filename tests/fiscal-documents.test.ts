@@ -46,4 +46,15 @@ describe("documentos fiscais para operação e contabilidade", () => {
     expect(strFromU8(files["resumo-notas.csv"])).toContain("XML completo");
     expect(strFromU8(files["LEIA-ME.txt"])).toContain("Resumos sem XML completo: 1");
   });
+
+  it("classifica cada nota pelo CNPJ da loja dona dela, não por um CNPJ geral", () => {
+    const outraLoja = "55666777000188";
+    const daOutraLoja = { ...invoice, access_key: "2".repeat(44), recipient_cnpj_cpf: outraLoja, company_cnpj: outraLoja };
+    const { archive } = buildAccountingZip(companyCnpj, [invoice, daOutraLoja]);
+    const files = unzipSync(archive);
+    expect(Object.keys(files)).toContain(`xml/entradas/NFe-${accessKey}.xml`);
+    expect(Object.keys(files)).toContain(`xml/entradas/NFe-${"2".repeat(44)}.xml`);
+    expect(Object.keys(files).filter((name) => name.startsWith("xml/outras/"))).toEqual([]);
+    expect(fiscalDirection(outraLoja, invoice.issuer_cnpj_cpf, outraLoja)).toBe("ENTRY");
+  });
 });
