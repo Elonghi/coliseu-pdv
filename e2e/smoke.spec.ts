@@ -102,12 +102,12 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(page.locator("td b", { hasText: playerName })).toBeVisible();
   });
 
-  test("usuário novo nasce vinculado à loja e o proprietário não pode ser rebaixado", async ({ page }) => {
+  test("usuário novo nasce vinculado à loja e o lojista titular não pode ser rebaixado", async ({ page }) => {
     const email = `usuario-e2e-${Date.now()}@coliseu.local`;
     await login(page, adminEmail, seedPassword);
     await page.goto("/admin/users");
     const owner = page.locator("tr", { hasText: adminEmail });
-    await expect(owner.getByText("Proprietário")).toBeVisible();
+    await expect(owner.getByText("Lojista", { exact: true })).toBeVisible();
     await expect(owner.getByText("Todas as lojas")).toBeVisible();
 
     await page.getByRole("button", { name: "Novo usuário" }).click();
@@ -122,7 +122,7 @@ test.describe.serial("fluxos essenciais", () => {
     const editForm = page.getByRole("dialog");
     await editForm.getByLabel("Perfil").selectOption("OPERATOR");
     await editForm.getByRole("button", { name: "Salvar alterações" }).click();
-    await expect(page.getByText("O proprietário da conta não pode ser desativado nem rebaixado.")).toBeVisible();
+    await expect(page.getByText("O lojista titular da conta não pode ser desativado nem rebaixado.")).toBeVisible();
   });
 
   test("administrador acessa o painel de notas fiscais", async ({ page }) => {

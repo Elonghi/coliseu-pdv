@@ -1,7 +1,7 @@
 /* Cria a conta do proprietário e a loja inicial, e vincula os usuários que já existem. Pode ser repetido sem efeito colateral.
  * A migration 0014_multi_conta_lojas contém exatamente estas instruções (tests/accounts-stores.integration.test.ts confere)
  * e o seed as reaplica em instalações novas, onde os usuários nascem depois da migration.
- * Regras: a operação atual vira uma conta com uma loja; o administrador ativo mais antigo é o proprietário;
+ * Regras: a operação atual vira uma conta com uma loja; o administrador ativo mais antigo é o lojista titular;
  * todos os usuários da conta ficam vinculados à loja. Contas e lojas já existentes nunca são alteradas. */
 export const defaultStoreName = "Coliseu TCG";
 

@@ -48,7 +48,7 @@ export default async function UsersPage() {
         <thead><tr><th>Usuário</th><th>Perfil</th><th>Lojas</th><th>Permissões</th><th>2FA</th><th>Status</th><th className="col-actions"><span className="sr-only">Ações</span></th></tr></thead>
         <tbody>{users.rows.map((user) => <tr key={user.id}>
           <td className="cell-wrap"><span className="cell-main"><b>{user.name}</b><small>{user.email}</small></span></td>
-          <td><span className="row-actions"><Badge tone={user.role === "ADMIN" ? "info" : "neutral"}>{user.role === "ADMIN" ? "Administrador" : "Operador"}</Badge>{user.is_account_owner && <Badge tone="ok">Proprietário</Badge>}</span></td>
+          <td><span className="row-actions"><Badge tone={user.role === "ADMIN" ? "info" : "neutral"}>{user.role === "ADMIN" ? "Administrador" : "Operador"}</Badge>{user.is_account_owner && <Badge tone="ok">Lojista</Badge>}</span></td>
           <td className="cell-wrap">{user.is_account_owner ? <span className="muted">Todas as lojas</span> : user.stores.length ? user.stores.join(", ") : <span className="muted">Sem loja</span>}</td>
           <td className="muted">{user.role === "ADMIN" ? "Acesso total" : user.permissions.length ? `${user.permissions.length} adicional(is)` : "Somente PDV"}</td>
           <td>{user.totp_enabled ? <Badge tone="ok"><ShieldCheck size={12}/>Ativo</Badge> : <span className="muted">Não configurado</span>}</td>

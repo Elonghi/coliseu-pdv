@@ -3,8 +3,8 @@ import type { Pool, PoolClient } from "pg";
 export type StoreSummary = { id: string; name: string };
 type Queryable = Pick<Pool | PoolClient, "query">;
 
-/* Lojas ativas que o usuário `u` pode acessar, como JSON, para entrar na consulta da sessão: o proprietário vê todas as lojas
- * da conta; os demais, só as que foram liberadas a eles (user_stores). Fica aqui, em um só lugar, para a sessão e os testes. */
+/* Lojas ativas que o usuário `u` pode acessar, como JSON, para entrar na consulta da sessão: o lojista (titular da conta) vê todas as lojas
+ * dele; os demais, só as que foram liberadas a eles (user_stores). Fica aqui, em um só lugar, para a sessão e os testes. */
 export const accessibleStoresJson = `COALESCE((SELECT json_agg(json_build_object('id', s.id, 'name', s.name) ORDER BY s.name)
   FROM stores s WHERE s.active AND s.account_id=u.account_id
     AND (u.is_account_owner OR EXISTS (SELECT 1 FROM user_stores us WHERE us.user_id=u.id AND us.store_id=s.id))), '[]'::json)`;
@@ -24,8 +24,8 @@ export async function attachUserToAccount(db: Queryable, userId: string, account
     ON CONFLICT DO NOTHING`, [userId, accountId, storeIds]);
 }
 
-/* O proprietário não pode ser desativado nem rebaixado: a conta ficaria sem quem a administre. */
+/* O lojista (titular da conta) não pode ser desativado nem rebaixado: a conta ficaria sem quem a administre. */
 export function ownerProtectionError(target: { isAccountOwner: boolean }, next: { role: string; active: boolean }) {
-  if (target.isAccountOwner && (next.role !== "ADMIN" || !next.active)) return "O proprietário da conta não pode ser desativado nem rebaixado.";
+  if (target.isAccountOwner && (next.role !== "ADMIN" || !next.active)) return "O lojista titular da conta não pode ser desativado nem rebaixado.";
   return null;
 }

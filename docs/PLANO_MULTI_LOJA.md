@@ -3,6 +3,17 @@
 Estado: **proposta para aprovação**. Nada deste plano foi implementado.
 Base de análise: 37 tabelas, cerca de 387 consultas SQL em 50 arquivos, `products.stock_quantity` usado em 59 pontos de 13 arquivos, configuração fiscal (CNPJ e certificado) lida de variáveis de ambiente.
 
+## Vocabulário (use sempre estes termos)
+
+| Termo | O que é | No banco |
+|---|---|---|
+| **Plataforma** | O dono do sistema. Vende o Coliseon para lojistas e administra todos eles. | fora das tabelas de cliente (painel da plataforma, a construir) |
+| **Lojista** | O **cliente que contrata** o sistema. É a unidade de isolamento (multi-tenant): nunca enxerga dados de outro lojista. Tem N lojas. | `accounts`; o usuário titular tem `users.is_account_owner` |
+| **Loja** | Cada ponto de venda de um lojista. | `stores` |
+| **Equipe** | Administradores de loja e operadores do lojista. | `users` com `account_id` e vínculos em `user_stores` |
+
+O lojista tem duas visões: **uma loja específica** e **todas as lojas** (resumo consolidado). Neste documento, "conta" e "proprietário" querem dizer **lojista** (a palavra "contas" também aparece no financeiro, onde são contas a pagar e a receber).
+
 ## 1. Regras fechadas
 
 1. O sistema é vendido a **vários usuários** (lojistas). Cada usuário que contrata é o **proprietário** de uma **conta do proprietário**, que é a fronteira de isolamento: tudo o que ele e a equipe dele criam pertence a essa conta, e uma conta nunca enxerga dados de outra. Tudo roda no mesmo servidor e no mesmo banco. Não existe cadastro separado de "organização" ou "empresa": a conta nasce junto com o usuário proprietário. (Neste documento "conta" sempre quer dizer isso, e não as contas a pagar e a receber do financeiro.)

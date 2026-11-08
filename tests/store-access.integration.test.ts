@@ -28,7 +28,7 @@ suite("acesso às lojas da conta", () => {
     outraConta = (await db.query<{ id: string }>("INSERT INTO stores (account_id,name) VALUES ($1,'Loja da outra conta') RETURNING id", [accountB])).rows[0].id;
   });
 
-  it("o proprietário enxerga todas as lojas ativas da própria conta, e só dela", async () => {
+  it("o lojista enxerga todas as lojas ativas dele, e só as dele", async () => {
     const owner = await user("dono", { owner: true });
     await db.query("INSERT INTO stores (account_id,name,active) VALUES ($1,'Fechada',false)", [accountA]);
     expect((await listAccessibleStores(db, owner)).map((store) => store.name)).toEqual(["Centro", "Shopping"]);
@@ -54,7 +54,7 @@ suite("acesso às lojas da conta", () => {
     expect(row.stores).toEqual([{ id: centro, name: "Centro" }, { id: shopping, name: "Shopping" }]);
   });
 
-  it("vincula o usuário novo à conta e às lojas de quem o criou, ignorando loja de outra conta", async () => {
+  it("vincula o usuário novo ao lojista e às lojas de quem o criou, ignorando loja de outra conta", async () => {
     const created = await user("novo", { account: null });
     await attachUserToAccount(db, created, accountA, [centro, outraConta]);
     expect((await db.query("SELECT account_id FROM users WHERE id=$1", [created])).rows[0].account_id).toBe(accountA);
@@ -70,9 +70,9 @@ suite("acesso às lojas da conta", () => {
     expect(await links(existing)).toEqual([]);
   });
 
-  it("protege o proprietário contra rebaixamento e desativação", () => {
-    expect(ownerProtectionError({ isAccountOwner: true }, { role: "OPERATOR", active: true })).toMatch(/proprietário/);
-    expect(ownerProtectionError({ isAccountOwner: true }, { role: "ADMIN", active: false })).toMatch(/proprietário/);
+  it("protege o lojista titular contra rebaixamento e desativação", () => {
+    expect(ownerProtectionError({ isAccountOwner: true }, { role: "OPERATOR", active: true })).toMatch(/lojista/);
+    expect(ownerProtectionError({ isAccountOwner: true }, { role: "ADMIN", active: false })).toMatch(/lojista/);
     expect(ownerProtectionError({ isAccountOwner: true }, { role: "ADMIN", active: true })).toBeNull();
     expect(ownerProtectionError({ isAccountOwner: false }, { role: "OPERATOR", active: false })).toBeNull();
   });
