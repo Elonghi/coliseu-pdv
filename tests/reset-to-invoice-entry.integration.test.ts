@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { fullXml } from "./fixtures/fiscal";
+import { resetTenancy } from "./fixtures/tenancy";
 
 const url = process.env.TEST_DATABASE_URL;
 const suite = describe.runIf(Boolean(url));
@@ -39,6 +40,7 @@ suite("script que reabre as notas para entrada de estoque", () => {
   afterAll(async () => { await pool?.end(); await rm(storage, { recursive: true, force: true }); });
 
   beforeEach(async () => {
+    await resetTenancy(pool);
     await pool.query("TRUNCATE audit_logs,bank_imports,cash_registers,inventory_counts,purchase_orders,suppliers,financial_settlements,financial_installments,player_credit_movements,financial_accounts,stock_movements,product_splits,payments,sale_items,sales,supplier_product_mappings,fiscal_invoice_events,fiscal_invoice_items,fiscal_invoices,fiscal_dfe_documents,fiscal_import_batches,sefaz_sync_states,players,products,categories,units,payment_methods,users RESTART IDENTITY CASCADE");
     const users = await pool.query<{ id: string }>("INSERT INTO users(name,email,password_hash,role) VALUES ('Admin','admin@reset.test','x','ADMIN'),('Operador','op@reset.test','x','OPERATOR') RETURNING id");
     [adminId, operatorId] = users.rows.map((row) => row.id);

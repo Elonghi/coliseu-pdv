@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { resetTenancy } from "./fixtures/tenancy";
 
 const url=process.env.TEST_DATABASE_URL;
 const suite=describe.runIf(Boolean(url));
@@ -15,6 +16,7 @@ suite("vendas transacionais com PostgreSQL",()=>{
     if(!url||!new URL(url).pathname.toLowerCase().includes("test"))throw new Error("TEST_DATABASE_URL deve apontar para um banco com 'test' no nome.");
     process.env.DATABASE_URL=url;
     ({pool}=await import("@/db"));({createSale,cancelSale}=await import("@/modules/sales/service"));({settleFinancialInstallment,createFinancialAccount,reverseFinancialSettlement,importOfx,reconcileBankTransaction}=await import("@/modules/finance/service"));({splitProductIntoBoosters}=await import("@/modules/stock/service"));({addCashMovement,closeCashSession}=await import("@/modules/cash/service"));({createInventoryCount,updateInventoryItem,finalizeInventoryCount}=await import("@/modules/inventory/service"));({createSupplier,createPurchaseOrder,addPurchaseItem,sendPurchaseOrder,receivePurchaseOrder}=await import("@/modules/purchases/service"));
+    await resetTenancy(pool);
     await pool.query("TRUNCATE audit_logs,bank_imports,cash_registers,inventory_counts,purchase_orders,suppliers,financial_settlements,financial_installments,player_credit_movements,financial_accounts,stock_movements,product_splits,payments,sale_items,sales,sessions,products,categories,units,payment_methods,players,users RESTART IDENTITY CASCADE");
     const users=await pool.query<{id:string}>(`INSERT INTO users(name,email,password_hash,role) VALUES ('Admin','admin@test.local','x','ADMIN'),('Operador','op@test.local','x','OPERATOR') RETURNING id,role`);adminId=users.rows[0].id;operatorId=users.rows[1].id;
     const register=await pool.query<{id:string}>("INSERT INTO cash_registers(name) VALUES ('Caixa teste') ON CONFLICT ((lower(name))) DO UPDATE SET active=true,updated_at=now() RETURNING id");await pool.query("INSERT INTO cash_sessions(register_id,operator_id,opening_amount_cents) VALUES ($1,$2,10000)",[register.rows[0].id,operatorId]);

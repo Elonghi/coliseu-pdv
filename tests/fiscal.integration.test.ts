@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eventSummaryXml, fullXml, summaryXml } from "./fixtures/fiscal";
+import { resetTenancy } from "./fixtures/tenancy";
 
 const url = process.env.TEST_DATABASE_URL;
 const suite = describe.runIf(Boolean(url));
@@ -19,7 +20,7 @@ suite("sincronização fiscal com PostgreSQL", () => {
     ({ syncSefazDfe, importFiscalXmlBatch } = await import("@/modules/fiscal/service"));
     ({ receiveFiscalInvoiceStock, receiveFiscalInvoiceItems } = await import("@/modules/fiscal/stock"));
   });
-  beforeEach(async () => { await pool.query("TRUNCATE financial_settlements,financial_installments,financial_accounts,stock_movements,supplier_product_mappings,fiscal_invoice_events,fiscal_invoice_items,fiscal_invoices,fiscal_dfe_documents,fiscal_import_batches,sefaz_sync_states,products,categories,units CASCADE"); });
+  beforeEach(async () => { await resetTenancy(pool); await pool.query("TRUNCATE financial_settlements,financial_installments,financial_accounts,stock_movements,supplier_product_mappings,fiscal_invoice_events,fiscal_invoice_items,fiscal_invoices,fiscal_dfe_documents,fiscal_import_batches,sefaz_sync_states,products,categories,units CASCADE"); });
   afterAll(async () => { await pool?.end(); });
 
   const invoiceId = async () => (await pool.query<{ id: string }>("SELECT id FROM fiscal_invoices LIMIT 1")).rows[0].id;

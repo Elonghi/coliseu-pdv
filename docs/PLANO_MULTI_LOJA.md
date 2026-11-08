@@ -47,7 +47,8 @@ A criação de uma conta nova, ou seja, de um novo proprietário, é feita no in
 
 Decisões de estrutura:
 
-- **`account_id` em todas as tabelas.** As de loja também têm `store_id`, com chave estrangeira composta `(account_id, store_id)` para o banco recusar uma venda ligada a uma loja de outra conta.
+- **Colunas por nível** (decidido ao implementar a etapa 1): tabela **de loja** tem só `store_id` (a conta se obtém pela loja); tabela **compartilhável** tem `account_id` e `store_id` opcional; tabela de **conta** (usuários, auditoria) tem `account_id` opcional até o endurecimento. A consistência entre tabelas pai e filha (item de venda na mesma loja da venda) entra no endurecimento, com chave composta.
+- **Padrão calculado pelo banco:** cada coluna nova tem como padrão `app_current_store()` / `app_current_account()`: o valor de `app.store_id` / `app.account_id` da sessão ou, enquanto existir uma única loja (ou conta), essa única. O código atual segue funcionando sem mudar, e uma segunda loja criada antes do código escolher a loja ativa faz a gravação **falhar** em vez de misturar dados.
 - **Estoque e custo médio por loja** (`product_stock`). Os 59 pontos que leem `products.stock_quantity` passam a ler dali.
 - **Numeração** de vendas e pedidos de compra sequencial por loja, com contador próprio (`store_counters`). O id interno continua existindo.
 - **Unicidade** de SKU, código de barras e nome vale por escopo: entre os itens compartilhados e, separadamente, entre os da loja. Ao compartilhar, o sistema checa conflitos.

@@ -52,3 +52,7 @@ export const tenancy = {
   sae_nfce_sync_states: "STORE",
   sae_nfce_keys: "STORE",
 } as const satisfies Record<string, TenancyLevel>;
+
+/* Tabelas classificadas como STORE que ainda não têm store_id: a chave primária delas precisa ser refeita por loja
+ * (payment_methods usa o código como chave e payments aponta para ele). Entra na etapa de endurecimento. */
+export const storeColumnPending: readonly string[] = ["payment_methods"];

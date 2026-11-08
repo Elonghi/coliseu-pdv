@@ -122,3 +122,22 @@ docker compose -f docker-compose.coolify.yml --profile maintenance run --rm migr
 ```
 
 Volta atrás: a migration é aditiva, então redeployar o commit anterior basta. Para remover as tabelas, restaure o backup.
+
+### 0015 `dados_por_loja` (separação dos dados por lojista e por loja, etapa 1)
+
+Acrescenta `store_id` às 24 tabelas de loja (vendas, caixa, estoque, financeiro, fiscal), `account_id` e `store_id` opcional às 5 compartilháveis (categorias, produtos, vínculos de fornecedor, fornecedores, jogadores) e conta e loja opcionais à auditoria. Cria as funções `app_current_account()` e `app_current_store()`. Todas as linhas que já existem recebem a loja e o lojista atuais. O app em produção não usa as colunas ainda; elas se preenchem sozinhas, então ele continua igual.
+
+**Janela:** a migration altera cerca de 30 tabelas numa transação e pede travas curtas. Aplique fora do horário de uso, com o backup feito, e só depois de a imagem nova estar no ar.
+
+Depois de aplicar, no terminal do app (só lê):
+
+```bash
+node -e 'const pg=require("pg");(async()=>{const c=new pg.Client({connectionString:process.env.DATABASE_URL});await c.connect();const T=["sales","sale_items","payments","stock_movements","cash_sessions","financial_accounts","fiscal_invoices","purchase_orders","inventory_counts"];for(const t of T){const r=(await c.query(`SELECT count(*)::int total, count(*) FILTER (WHERE store_id IS NULL)::int sem_loja FROM ${t}`)).rows[0];console.log(t.padEnd(20),"linhas:",String(r.total).padStart(7),"| sem loja:",r.sem_loja)}for(const t of ["products","categories","suppliers","players"]){const r=(await c.query(`SELECT count(*)::int total, count(*) FILTER (WHERE account_id IS NULL)::int sem_lojista FROM ${t}`)).rows[0];console.log(t.padEnd(20),"linhas:",String(r.total).padStart(7),"| sem lojista:",r.sem_lojista)}await c.end()})()'
+```
+
+Esperado: **`sem loja` e `sem lojista` iguais a 0 em todas as linhas**, e o total de cada tabela igual ao de antes da migration. Se algum vier maior que zero, pare e me avise.
+
+**Regra nova do banco, importante:** enquanto existir **uma única loja**, tudo grava nela sozinho. Se uma **segunda loja** (ou um segundo lojista) for criada **antes** do código passar a escolher a loja ativa, as gravações de venda, caixa, estoque etc. **falham de propósito**, em vez de misturar dados. Não crie uma segunda loja ou outro lojista antes dessa etapa do código.
+
+Volta atrás: a migration só acrescenta, então redeployar o commit anterior basta (o código antigo ignora as colunas). Para remover as colunas, restaure o backup.
+
