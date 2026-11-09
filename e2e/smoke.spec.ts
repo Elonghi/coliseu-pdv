@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import pg from "pg";
+import { encryptTotpSecret, generateTotpCode, generateTotpSecret } from "../src/modules/auth/totp";
 import { expect, test, type Page } from "@playwright/test";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@coliseu.local";
@@ -396,6 +397,54 @@ test.describe.serial("fluxos essenciais", () => {
     } finally {
       await db.query("UPDATE accounts SET active=false WHERE name=$1", [`Demo E2E ${stamp}`]);
       await db.query("UPDATE users SET is_platform_admin=false WHERE lower(email)=lower($1)", [adminEmail]);
+      await db.end();
+    }
+  });
+  test("o código do 2FA só é pedido num segundo passo, depois da senha, e só para quem tem 2FA ativo", async ({ page }) => {
+    test.skip(!process.env.DATABASE_URL || !(process.env.TOTP_ENCRYPTION_KEY ?? process.env.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY), "precisa do banco e da chave do 2FA no mesmo ambiente do servidor");
+    const secret = generateTotpSecret();
+    const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
+    await db.query("UPDATE users SET totp_enabled=true, totp_secret_encrypted=$2 WHERE lower(email)=lower($1)", [operatorEmail, encryptTotpSecret(secret)]);
+    const fillCredentials = async (password: string) => {
+      await page.getByLabel("E-mail corporativo").fill(operatorEmail);
+      await page.getByLabel("Senha", { exact: true }).fill(password);
+      await page.getByRole("button", { name: "Entrar no sistema" }).click();
+    };
+    try {
+      // A primeira tela não mostra o campo do código.
+      await page.goto("/login");
+      await expect(page.getByLabel(/Código/)).toHaveCount(0);
+      await expect(page.getByText("2FA")).toHaveCount(0);
+
+      // Senha errada: erro genérico, sem revelar que a conta tem 2FA.
+      await fillCredentials("senha-errada-123");
+      await expect(page.locator(".login-form .notice-error")).toContainText("E-mail ou senha inválidos.");
+      await expect(page.getByLabel("Código de verificação")).toHaveCount(0);
+
+      // Senha certa: aparece o segundo passo. Um código errado é recusado, e "Voltar" retorna à senha (campo vazio).
+      await fillCredentials(operatorPassword);
+      await expect(page.getByText("Verificação em duas etapas")).toBeVisible();
+      await expect(page).toHaveURL(/\/login/);
+      const valid = new Set([-30_000, 0, 30_000].map((shift) => generateTotpCode(secret, Date.now() + shift)));
+      const wrong = Array.from({ length: 10 }, (_, index) => String(111111 * index).padStart(6, "0")).find((code) => !valid.has(code))!;
+      await page.getByLabel("Código de verificação").fill(wrong);
+      await page.getByRole("button", { name: "Entrar no sistema" }).click();
+      await expect(page.locator(".login-form .notice-error")).toContainText("Código de autenticação em duas etapas inválido.");
+      await page.getByRole("button", { name: "Voltar" }).click();
+      await expect(page.getByLabel("Senha", { exact: true })).toHaveValue("");
+      await expect(page.getByLabel("Código de verificação")).toHaveCount(0);
+      await expect(page.locator(".login-form .notice-error")).toHaveCount(0);
+
+      // Senha de novo e o código certo: entra.
+      await fillCredentials(operatorPassword);
+      await page.getByLabel("Código de verificação").fill(generateTotpCode(secret));
+      await page.getByRole("button", { name: "Entrar no sistema" }).click();
+      await page.waitForURL((url) => url.pathname !== "/login");
+      await expect(page).toHaveURL(/\/pdv/);
+    } finally {
+      await db.query("UPDATE users SET totp_enabled=false, totp_secret_encrypted=NULL WHERE lower(email)=lower($1)", [operatorEmail]);
+      await db.query("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE lower(email)=lower($1))", [operatorEmail]);
       await db.end();
     }
   });

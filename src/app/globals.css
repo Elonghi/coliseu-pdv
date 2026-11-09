@@ -337,6 +337,11 @@ body:has(dialog[open]) { overflow: hidden; }
 .login-remember b { font-size: .8rem; }
 .login-remember small { color: var(--muted); font-size: .7rem; }
 .login-submit { min-height: 48px; margin-top: .25rem; background: #172744; }
+.login-otp-intro { display: grid; grid-template-columns: 20px 1fr; gap: .75rem; padding: .95rem 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); color: #0c9560; }
+.login-otp-intro b { color: var(--ink); font-size: .85rem; }
+.login-otp-intro p { margin: .2rem 0 0; color: var(--muted); font-size: .78rem; line-height: 1.45; overflow-wrap: anywhere; }
+.login-otp-intro p b { font-size: inherit; color: var(--ink-soft); }
+.login-step-back { min-height: 44px; }
 .login-card footer { margin-top: 2rem; padding-top: 1.2rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .73rem; line-height: 1.5; }
 
 /* Shell administrativo e recolhimento completo da barra. */
