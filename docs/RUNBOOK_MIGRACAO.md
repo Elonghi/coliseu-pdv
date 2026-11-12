@@ -279,3 +279,12 @@ O que é criado, tudo fictício (nomes inventados, CNPJs de faixa fictícia, e-m
 
 Em desenvolvimento (ou pelo serviço `migrate` do compose, que tem `tsx`), o mesmo cliente é criado por comando: `npm run db:seed-demo` (variáveis `DEMO_OWNER_EMAIL` e `DEMO_PASSWORD`; com o banco de desenvolvimento, que roda sem as travas, é preciso `DEMO_SKIP_ISOLATION_CHECK=true`).
 
+## 13. Primeiro acesso do lojista: guia de primeiros passos
+
+Quando você cria um lojista novo (seção 10), o titular entra num sistema vazio. No **primeiro acesso** o painel o leva uma vez à página **Primeiros passos** (menu Visão geral), que mostra o caminho mínimo em seis passos: **categoria, primeiro produto, estoque, caixa, abertura do caixa e primeira venda**. Cada passo explica o que fazer, abre a tela certa e se marca sozinho quando o dado existe na loja. Nas telas de cada passo aparece um aviso no topo (por exemplo, "Passo 2 de 6 · Cadastre o primeiro produto"), e, concluído, ele aponta o próximo.
+
+- **Para quem aparece:** administradores de um lojista. Operador de caixa vai direto ao PDV e não vê o guia. Quem já tem a loja rodando (categoria, produto, estoque, caixa, caixa aberto e venda) não vê nada: o guia some sozinho quando os seis passos existem.
+- **Por loja:** o progresso é conferido na loja ativa. Lojista com várias lojas, ao escolher uma loja nova no seletor, vê o guia daquela loja. Na visão de "Todas as lojas" o guia pede para escolher uma loja, porque produto, estoque e caixa são de cada loja.
+- **Sem migration:** nada novo no banco. O guia só lê o que já existe. Se a pessoa **dispensar** o guia (ou já tiver visto as boas-vindas), isso fica num cookie do navegador, um por usuário; em outro navegador ou aparelho as boas-vindas aparecem de novo enquanto o guia não terminar. Na página Primeiros passos há o botão para voltar a mostrá-lo no painel.
+- **Apresentações:** o cliente de demonstração (seção 12.2) já nasce com os seis passos feitos, então não mostra o guia. Para mostrar o guia numa apresentação, crie um **lojista novo** pelo painel do sistema.
+

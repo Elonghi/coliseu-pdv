@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Package, PackageSearch, Pencil, Plus } from "lucide-react";
 import { FilterBar, SearchField } from "@/components/filter-bar";
+import { GuideCoach } from "@/components/guide";
 import { Badge, EmptyState, Pagination, PageHeader } from "@/components/ui";
 import { ProductStoreTag, StockScope, StoreBreakdown } from "@/components/stock-scope";
 import { pool } from "@/db";
@@ -45,6 +46,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       ? <button type="button" className="btn btn-success" disabled title="Escolha uma loja no seletor: o produto nasce na loja ativa."><Plus size={16}/>Novo produto</button>
       : <Link className="btn btn-success" href="/admin/products/new"><Plus size={16}/>Novo produto</Link>}/>
 
+    <GuideCoach user={user} steps={["product"]}/>
     <StockScope user={user}/>
 
     <FilterBar clearHref="/admin/products" hasFilters={hasFilters}>

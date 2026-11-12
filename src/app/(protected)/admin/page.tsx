@@ -1,11 +1,15 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AlertTriangle, Banknote, CalendarDays, HandCoins, PackageX, ReceiptText, ShoppingBag, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { DashboardCharts } from "@/components/dashboard-charts";
+import { GuideCard } from "@/components/guide";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
 import { getDashboard } from "@/modules/dashboard/queries";
 import { hasPermission, permissions } from "@/modules/auth/permissions";
 import { requirePermission } from "@/modules/auth/session";
+import { guideApplies, loadGuideProgress } from "@/modules/onboarding/progress";
+import { readGuideCookie } from "@/modules/onboarding/state";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +17,10 @@ const percent = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maxim
 
 export default async function DashboardPage() {
   const user = await requirePermission(permissions.DASHBOARD_VIEW);
+  // Primeiro acesso de quem configura o sistema: leva uma vez ao passo a passo; depois ele vira um cartão aqui, até terminar ou ser dispensado.
+  const guide = guideApplies(user) ? await loadGuideProgress(user) : null;
+  const remembered = guide ? await readGuideCookie(user.id) : null;
+  if (guide && !guide.complete && remembered === null) redirect("/admin/primeiros-passos");
   const data = await getDashboard();
   const { kpis: k, financial: f, stock } = data;
   const change = k.previous_month_cents ? ((k.month_cents - k.previous_month_cents) / k.previous_month_cents) * 100 : null;
@@ -21,6 +29,8 @@ export default async function DashboardPage() {
 
   return <div className="section-gap">
     <PageHeader eyebrow="Visão geral" title="Dashboard" description={user.consolidated ? `Resumo de todas as suas ${user.stores.length} lojas juntas.` : "Vendas, financeiro e alertas de estoque em um só lugar."}/>
+
+    {guide && !guide.complete && remembered !== "dismissed" && <GuideCard progress={guide} user={user}/>}
 
     {user.consolidated && <section className="card" aria-label="Resumo por loja">
       <div className="panel-head"><div><h2 className="panel-title">Por loja</h2><p className="panel-desc">Cada loja separada, para comparar. Os números abaixo somam todas elas.</p></div></div>

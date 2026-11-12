@@ -10,12 +10,34 @@ const seedPassword = process.env.SEED_ADMIN_PASSWORD ?? "TroqueEstaSenha123!";
 const operatorPassword = process.env.SEED_OPERATOR_PASSWORD ?? "TroqueEstaSenha123!";
 const playerName = `Jogador E2E ${Date.now()}`;
 
-async function login(page: Page, email: string, password: string) {
+async function signIn(page: Page, email: string, password: string) {
   await page.goto("/login");
   await page.getByLabel("E-mail corporativo").fill(email);
   await page.getByLabel("Senha", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Entrar no sistema" }).click();
   await page.waitForURL((url) => url.pathname !== "/login");
+}
+
+/* Troca a loja pelo seletor do menu. Numa página pesada o clique pode chegar antes de a hidratação terminar e o evento se perde:
+ * repete até o rodapé mostrar a loja escolhida. */
+async function chooseStore(page: Page, label: string) {
+  const select = page.getByLabel("Loja ativa");
+  await expect(async () => {
+    await select.selectOption({ label });
+    await expect(page.locator(".admin-footer")).toContainText(label, { timeout: 3000 });
+  }).toPass({ timeout: 25_000 });
+}
+
+/* Entra e segue para o painel. Quem ainda não configurou a loja cai uma vez no guia de primeiros passos; as boas-vindas só aparecem
+ * na primeira vez, então espera o navegador registrá-las e volta ao painel. */
+async function login(page: Page, email: string, password: string) {
+  await signIn(page, email, password);
+  // o redirecionamento do painel para o guia acontece depois de a URL já ser /admin: espera a tela de destino aparecer
+  if (["/admin", "/admin/primeiros-passos"].includes(new URL(page.url()).pathname)) await page.getByRole("heading", { name: /^(Dashboard|Primeiros passos)$/ }).first().waitFor();
+  if (new URL(page.url()).pathname === "/admin/primeiros-passos") {
+    await expect.poll(async () => (await page.context().cookies()).some((cookie) => cookie.name.startsWith("coliseu_guide_"))).toBe(true);
+    await page.goto("/admin");
+  }
 }
 
 test.describe.serial("fluxos essenciais", () => {
@@ -354,6 +376,105 @@ test.describe.serial("fluxos essenciais", () => {
       await db.end();
     }
   });
+  test("primeiro acesso do lojista novo: o guia leva do zero até a primeira venda", async ({ page, browser }) => {
+    test.setTimeout(180_000);
+    test.skip(!process.env.DATABASE_URL || !process.env.APP_DATABASE_URL, "precisa do banco e do isolamento ativo para criar um lojista novo");
+    const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
+    const stamp = Date.now();
+    const ownerEmail = `guia-${stamp}@novolojista.test`;
+    const ownerPassword = "SenhaProvisoria-2026";
+    const accountName = `Lojista Guia ${stamp}`;
+    await db.query("UPDATE users SET is_platform_admin=true WHERE lower(email)=lower($1)", [adminEmail]);
+    try {
+      await login(page, adminEmail, seedPassword);
+      await page.goto("/plataforma");
+      await page.getByRole("button", { name: "Novo lojista" }).click();
+      const form = page.getByRole("dialog");
+      await form.getByLabel("Nome do lojista (cliente)").fill(accountName);
+      await form.getByLabel("Nome da loja").fill("Loja do Guia");
+      await form.getByLabel("Nome", { exact: true }).fill("Titular do Guia");
+      await form.getByLabel("E-mail", { exact: true }).fill(ownerEmail);
+      await form.getByLabel("Senha provisória").fill(ownerPassword);
+      await form.getByRole("button", { name: "Criar lojista" }).click();
+      await expect(page.getByText("Lojista criado.")).toBeVisible();
+
+      // primeiro acesso: o painel leva ao passo a passo, que começa do zero
+      const context = await browser.newContext();
+      const titular = await context.newPage();
+      await signIn(titular, ownerEmail, ownerPassword);
+      await titular.goto("/admin");
+      await expect(titular).toHaveURL(/\/admin\/primeiros-passos/);
+      await expect(titular.getByRole("heading", { name: "Primeiros passos", exact: true })).toBeVisible();
+      await expect(titular.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
+      await expect(titular.locator(".guide-step.is-current")).toContainText("Crie uma categoria");
+
+      // depois de ver as boas-vindas, o painel mostra o cartão em vez de redirecionar
+      await expect.poll(async () => (await context.cookies()).some((cookie) => cookie.name.startsWith("coliseu_guide_"))).toBe(true);
+      await titular.goto("/admin");
+      await expect(titular).toHaveURL(/\/admin$/);
+      await expect(titular.locator(".guide-card")).toContainText("Passo 1: Crie uma categoria");
+
+      // 1. categoria
+      await titular.getByRole("link", { name: "Abrir Categorias" }).click();
+      await expect(titular.locator(".guide-coach")).toContainText("Passo 1 de 6");
+      await titular.getByLabel("Nova categoria").fill("Cartas avulsas");
+      await titular.getByRole("button", { name: "Adicionar categoria" }).click();
+      await expect(titular.locator(".guide-coach")).toContainText("Concluído");
+      await expect(titular.locator(".guide-coach")).toContainText("Próximo: Cadastre o primeiro produto");
+
+      // 2. produto, já com estoque inicial (conclui o passo 3 junto)
+      await titular.locator(".guide-coach").getByRole("link", { name: /Cadastre o primeiro produto/ }).click();
+      await expect(titular.locator(".guide-coach")).toContainText("Passo 2 de 6");
+      await titular.getByLabel("SKU").fill("BOOSTER-01");
+      await titular.getByLabel("Nome", { exact: true }).fill("Booster do Guia");
+      await titular.getByLabel("Custo (R$)").fill("6,00");
+      await titular.getByLabel("Venda (R$)").fill("10,00");
+      await titular.getByLabel("Estoque inicial").fill("5");
+      await titular.getByRole("button", { name: "Criar produto" }).click();
+      await expect(titular.getByRole("heading", { name: "Editar produto" })).toBeVisible();
+      await expect(titular.locator(".guide-coach")).toContainText("Concluído");
+      await expect(titular.locator(".guide-coach")).toContainText("Próximo: Cadastre um caixa");
+
+      // 4 e 5. caixa
+      await titular.goto("/admin/cash");
+      await expect(titular.locator(".guide-coach")).toContainText("Passo 4 de 6");
+      await titular.getByRole("button", { name: "Novo caixa" }).click();
+      await titular.getByRole("dialog").getByLabel("Nome").fill("Caixa balcão");
+      await titular.getByRole("dialog").getByRole("button", { name: "Cadastrar caixa" }).click();
+      await expect(titular.locator(".guide-coach")).toContainText("Passo 5 de 6");
+      await titular.getByRole("button", { name: "Abrir meu caixa" }).click();
+      await titular.getByRole("dialog").getByRole("button", { name: "Abrir caixa" }).click();
+      await expect(titular.locator(".guide-coach")).toContainText("Próximo: Faça a primeira venda");
+
+      // 6. primeira venda no PDV
+      await titular.getByRole("link", { name: /Faça a primeira venda/ }).click();
+      await expect(titular).toHaveURL(/\/pdv/);
+      const search = titular.waitForResponse((response) => response.url().includes("/api/pos/products?q="));
+      await titular.getByPlaceholder("Nome, SKU ou código de barras").fill("Booster");
+      await expect((await search).ok()).toBeTruthy();
+      await titular.getByText("Booster do Guia").first().click();
+      await titular.getByRole("button", { name: /Finalizar venda/ }).click();
+      await titular.getByLabel("PIX").fill("10,00");
+      const sale = titular.waitForResponse((response) => response.url().endsWith("/api/sales"));
+      await titular.getByRole("button", { name: "Confirmar venda" }).click();
+      expect((await sale).status()).toBe(201);
+      await expect(titular.getByText("Venda concluída")).toBeVisible();
+
+      // tudo feito: o cartão some do painel e a página do guia comemora
+      await titular.goto("/admin");
+      await expect(titular).toHaveURL(/\/admin$/);
+      await expect(titular.locator(".guide-card")).toHaveCount(0);
+      await titular.goto("/admin/primeiros-passos");
+      await expect(titular.getByRole("heading", { name: "Tudo pronto para vender" })).toBeVisible();
+      await expect(titular.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "6");
+      await context.close();
+    } finally {
+      await db.query("UPDATE accounts SET active=false WHERE name=$1", [accountName]);
+      await db.query("UPDATE users SET is_platform_admin=false WHERE lower(email)=lower($1)", [adminEmail]);
+      await db.end();
+    }
+  });
   test("o cliente de demonstração criado pelo painel traz lojas, etiquetas, notas fiscais e vendas prontas para apresentar", async ({ page, browser }) => {
     test.setTimeout(240_000);
     test.skip(!process.env.DATABASE_URL, "precisa acessar o banco para dar o acesso de administrador do sistema");
@@ -409,10 +530,10 @@ test.describe.serial("fluxos essenciais", () => {
       await titular.goto("/admin/products");
       await expect(titular.getByText("Play Booster Bloomburrow").first()).toBeVisible();
       // cada loja com os seus produtos: a Shopping não trabalha com cartas avulsas
-      await titular.getByLabel("Loja ativa").selectOption({ label: "Loja Centro" });
+      await chooseStore(titular, "Loja Centro");
       await expect(titular.locator(".stock-scope")).toContainText("Loja Centro");
       await expect(titular.getByText("Carta avulsa — Anel Solar (NM)")).toBeVisible();
-      await titular.getByLabel("Loja ativa").selectOption({ label: "Loja Shopping" });
+      await chooseStore(titular, "Loja Shopping");
       await expect(titular.locator(".stock-scope")).toContainText("Loja Shopping");
       await expect(titular.getByText("Play Booster Bloomburrow").first()).toBeVisible();
       await expect(titular.getByText("Carta avulsa — Anel Solar (NM)")).toHaveCount(0);

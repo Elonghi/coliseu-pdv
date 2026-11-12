@@ -7,7 +7,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, LogOut, PanelLeftClose, Server,
 import { logoutAction } from "@/modules/auth/actions";
 import type { Permission } from "@/modules/auth/permissions";
 import type { SessionUser } from "@/modules/auth/session";
-import { adminNavigationGroups as groups } from "@/components/admin-navigation";
+import { adminNavigationGroups as groups, adminOnlyHrefs } from "@/components/admin-navigation";
 import { InstallAppButton } from "@/components/pwa";
 import { StoreSwitcher } from "@/components/store-switcher";
 
@@ -21,10 +21,10 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
   const pathname = usePathname();
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   const groupStorageKey = `coliseu:admin-menu-groups:${user.id}`;
-  const allowed = (permission: Permission | null) => user.role === "ADMIN" || !permission || user.permissions.includes(permission);
+  const allowed = (permission: Permission | null, href = "") => (user.role === "ADMIN" || !adminOnlyHrefs.has(href)) && (user.role === "ADMIN" || !permission || user.permissions.includes(permission));
   const matchingHrefs: string[] = [];
   for (const group of groups) for (const [href, , , permission] of group.links) {
-    if (allowed(permission) && (pathname === href || pathname.startsWith(`${href}/`))) matchingHrefs.push(href);
+    if (allowed(permission, href) && (pathname === href || pathname.startsWith(`${href}/`))) matchingHrefs.push(href);
   }
   const activeHref = matchingHrefs.sort((a, b) => b.length - a.length)[0];
   const active = (href: string) => href === activeHref;
@@ -58,7 +58,7 @@ export function AdminNav({ user, collapsed, mobileOpen, onToggle, onClose }: {
 
     <nav className="admin-nav-scroll">
       {groups.map((group) => {
-        const links = group.links.filter(([, , , permission]) => allowed(permission));
+        const links = group.links.filter(([href, , , permission]) => allowed(permission, href));
         const containsActive = links.some(([href]) => active(href));
         const groupCollapsed = collapsedGroups.includes(group.id) && !containsActive;
         return links.length ? <section className={`admin-nav-group ${groupCollapsed ? "is-group-collapsed" : ""}`} key={group.id}>

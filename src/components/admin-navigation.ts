@@ -1,16 +1,19 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  ArrowLeftRight, Banknote, BarChart3, Boxes, ClipboardCheck, CreditCard, FileInput,
+  ArrowLeftRight, Banknote, BarChart3, Boxes, ClipboardCheck, Compass, CreditCard, FileInput,
   FileText, History, LayoutDashboard, Package, ShieldCheck, ShoppingBag, Tags, Truck,
   UserRound, Users, WalletCards,
 } from "lucide-react";
 import { permissions, type Permission } from "@/modules/auth/permissions";
 
+/** Links que só o administrador vê (o guia de primeiros passos é para quem configura o sistema). */
+export const adminOnlyHrefs: ReadonlySet<string> = new Set(["/admin/primeiros-passos"]);
+
 export type AdminNavigationLink = readonly [href: string, label: string, icon: LucideIcon, permission: Permission | null];
 export type AdminNavigationGroup = { id: string; label: string; links: readonly AdminNavigationLink[] };
 
 export const adminNavigationGroups = [
-  { id: "overview", label: "Visão geral", links: [["/admin", "Dashboard", LayoutDashboard, permissions.DASHBOARD_VIEW]] },
+  { id: "overview", label: "Visão geral", links: [["/admin", "Dashboard", LayoutDashboard, permissions.DASHBOARD_VIEW], ["/admin/primeiros-passos", "Primeiros passos", Compass, permissions.DASHBOARD_VIEW]] },
   { id: "operation", label: "Operação", links: [["/admin/sales", "Vendas", ShoppingBag, permissions.SALES_VIEW], ["/admin/cash", "Caixas", Banknote, permissions.CASH_MANAGE], ["/admin/stock", "Estoque", BarChart3, permissions.STOCK_MANAGE], ["/admin/inventory", "Inventários", ClipboardCheck, permissions.INVENTORY_MANAGE], ["/admin/finance", "Financeiro", WalletCards, permissions.FINANCE_MANAGE], ["/admin/purchases", "Compras", Truck, permissions.PURCHASE_MANAGE]] },
   { id: "catalog", label: "Catálogo", links: [["/admin/products", "Produtos", Package, permissions.CATALOG_MANAGE], ["/admin/labels", "Etiquetas", Tags, permissions.CATALOG_MANAGE], ["/admin/categories", "Categorias", Boxes, permissions.CATALOG_MANAGE], ["/admin/payment-methods", "Pagamentos", CreditCard, permissions.CATALOG_MANAGE]] },
   { id: "relationship", label: "Relacionamento", links: [["/admin/players", "Jogadores", UserRound, permissions.PLAYERS_MANAGE], ["/admin/users", "Usuários", Users, permissions.USERS_MANAGE]] },
