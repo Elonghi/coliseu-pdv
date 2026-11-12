@@ -1,6 +1,5 @@
 import { ArrowDownUp, Banknote, Lock, Plus, Store, Unlock } from "lucide-react";
 import { ActionForm } from "@/components/action-form";
-import { GuideCoach } from "@/components/guide";
 import { Modal } from "@/components/modal";
 import { Badge, DateTimeCell, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import { pool } from "@/db";
@@ -42,8 +41,6 @@ export default async function CashPage() {
         </Modal>}
       </>}
     />
-
-    <GuideCoach user={user} steps={["register", "open"]}/>
 
     <section className="stat-grid" aria-label="Resumo dos caixas">
       <StatCard tone={sessions.rowCount ? "ok" : undefined} icon={Store} label="Sessões abertas" value={sessions.rowCount ?? 0} hint={ownOpen ? "Você tem um caixa aberto" : "Você não tem caixa aberto"}/>

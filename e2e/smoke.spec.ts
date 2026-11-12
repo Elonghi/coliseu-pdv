@@ -28,16 +28,16 @@ async function chooseStore(page: Page, label: string) {
   }).toPass({ timeout: 25_000 });
 }
 
-/* Entra e segue para o painel. Quem ainda não configurou a loja cai uma vez no guia de primeiros passos; as boas-vindas só aparecem
- * na primeira vez, então espera o navegador registrá-las e volta ao painel. */
+/* Entra e segue para o painel. Quem ainda não configurou a loja vê as boas-vindas do acesso guiado na primeira visita: elas cobrem a
+ * tela, então são dispensadas aqui para o teste seguir (o fluxo do guia tem teste próprio). */
 async function login(page: Page, email: string, password: string) {
   await signIn(page, email, password);
-  // o redirecionamento do painel para o guia acontece depois de a URL já ser /admin: espera a tela de destino aparecer
-  if (["/admin", "/admin/primeiros-passos"].includes(new URL(page.url()).pathname)) await page.getByRole("heading", { name: /^(Dashboard|Primeiros passos)$/ }).first().waitFor();
-  if (new URL(page.url()).pathname === "/admin/primeiros-passos") {
-    await expect.poll(async () => (await page.context().cookies()).some((cookie) => cookie.name.startsWith("coliseu_guide_"))).toBe(true);
-    await page.goto("/admin");
-  }
+  if (new URL(page.url()).pathname !== "/admin") return;
+  await page.getByRole("heading", { name: "Dashboard" }).waitFor();
+  // o guia confere o andamento antes de decidir se dá as boas-vindas ("checking"); sem guia montado, o atributo nem existe
+  await page.locator("html[data-guide]:not([data-guide=checking])").waitFor({ state: "attached", timeout: 4000 }).catch(() => undefined);
+  const later = page.getByRole("button", { name: "Agora não" });
+  if (await later.isVisible()) await expect(async () => { if (await later.isVisible()) await later.click(); await expect(later).toBeHidden({ timeout: 2000 }); }).toPass();
 }
 
 test.describe.serial("fluxos essenciais", () => {
@@ -376,8 +376,8 @@ test.describe.serial("fluxos essenciais", () => {
       await db.end();
     }
   });
-  test("primeiro acesso do lojista novo: o guia leva do zero até a primeira venda", async ({ page, browser }) => {
-    test.setTimeout(180_000);
+  test("primeiro acesso do lojista novo: o acesso guiado conduz do zero até a primeira venda", async ({ page, browser }) => {
+    test.setTimeout(240_000);
     test.skip(!process.env.DATABASE_URL || !process.env.APP_DATABASE_URL, "precisa do banco e do isolamento ativo para criar um lojista novo");
     const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await db.connect();
@@ -399,72 +399,60 @@ test.describe.serial("fluxos essenciais", () => {
       await form.getByRole("button", { name: "Criar lojista" }).click();
       await expect(page.getByText("Lojista criado.")).toBeVisible();
 
-      // primeiro acesso: o painel leva ao passo a passo, que começa do zero
       const context = await browser.newContext();
       const titular = await context.newPage();
-      await signIn(titular, ownerEmail, ownerPassword);
-      await titular.goto("/admin");
-      await expect(titular).toHaveURL(/\/admin\/primeiros-passos/);
-      await expect(titular.getByRole("heading", { name: "Primeiros passos", exact: true })).toBeVisible();
-      await expect(titular.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
-      await expect(titular.locator(".guide-step.is-current")).toContainText("Crie uma categoria");
+      const title = titular.locator(".guide-bubble h3");
+      const target = titular.locator(".guide-target");
+      /** O balão diz o que fazer e aponta o elemento real: o teste só faz o que o balão manda. */
+      const guide = (text: string) => expect(title).toHaveText(text, { timeout: 15_000 });
 
-      // depois de ver as boas-vindas, o painel mostra o cartão em vez de redirecionar
-      await expect.poll(async () => (await context.cookies()).some((cookie) => cookie.name.startsWith("coliseu_guide_"))).toBe(true);
-      await titular.goto("/admin");
-      await expect(titular).toHaveURL(/\/admin$/);
-      await expect(titular.locator(".guide-card")).toContainText("Passo 1: Crie uma categoria");
+      // primeiro acesso: boas-vindas com os seis passos
+      await signIn(titular, ownerEmail, ownerPassword);
+      await expect(titular.getByRole("heading", { name: "Bem-vindo, Titular!" })).toBeVisible();
+      await expect(titular.locator(".guide-welcome li")).toHaveCount(6);
+      await expect(async () => { await titular.getByRole("button", { name: "Começar o acesso guiado" }).click(); await expect(titular.locator(".guide-bubble")).toBeVisible({ timeout: 3000 }); }).toPass();
 
       // 1. categoria
-      await titular.getByRole("link", { name: "Abrir Categorias" }).click();
-      await expect(titular.locator(".guide-coach")).toContainText("Passo 1 de 6");
-      await titular.getByLabel("Nova categoria").fill("Cartas avulsas");
-      await titular.getByRole("button", { name: "Adicionar categoria" }).click();
-      await expect(titular.locator(".guide-coach")).toContainText("Concluído");
-      await expect(titular.locator(".guide-coach")).toContainText("Próximo: Cadastre o primeiro produto");
+      await guide("Abra Categorias"); await target.click();
+      await guide("Dê um nome à categoria"); await target.fill("Cartas avulsas");
+      await guide("Salve a categoria"); await target.click();
 
-      // 2. produto, já com estoque inicial (conclui o passo 3 junto)
-      await titular.locator(".guide-coach").getByRole("link", { name: /Cadastre o primeiro produto/ }).click();
-      await expect(titular.locator(".guide-coach")).toContainText("Passo 2 de 6");
-      await titular.getByLabel("SKU").fill("BOOSTER-01");
-      await titular.getByLabel("Nome", { exact: true }).fill("Booster do Guia");
-      await titular.getByLabel("Custo (R$)").fill("6,00");
-      await titular.getByLabel("Venda (R$)").fill("10,00");
-      await titular.getByLabel("Estoque inicial").fill("5");
-      await titular.getByRole("button", { name: "Criar produto" }).click();
-      await expect(titular.getByRole("heading", { name: "Editar produto" })).toBeVisible();
-      await expect(titular.locator(".guide-coach")).toContainText("Concluído");
-      await expect(titular.locator(".guide-coach")).toContainText("Próximo: Cadastre um caixa");
+      // 2 e 3. produto, já com estoque inicial
+      await guide("Abra Produtos"); await target.click();
+      await guide("Cadastre o produto"); await target.click();
+      await guide("SKU do produto"); await target.fill("BOOSTER-01");
+      await guide("Nome do produto"); await target.fill("Booster do Guia");
+      await guide("Quanto custou"); await target.fill("6,00");
+      await guide("Preço de venda"); await target.fill("10,00");
+      await guide("Quantas unidades você tem?"); await target.fill("5");
+      await guide("Tudo pronto"); await target.click();
 
-      // 4 e 5. caixa
-      await titular.goto("/admin/cash");
-      await expect(titular.locator(".guide-coach")).toContainText("Passo 4 de 6");
-      await titular.getByRole("button", { name: "Novo caixa" }).click();
-      await titular.getByRole("dialog").getByLabel("Nome").fill("Caixa balcão");
-      await titular.getByRole("dialog").getByRole("button", { name: "Cadastrar caixa" }).click();
-      await expect(titular.locator(".guide-coach")).toContainText("Passo 5 de 6");
-      await titular.getByRole("button", { name: "Abrir meu caixa" }).click();
-      await titular.getByRole("dialog").getByRole("button", { name: "Abrir caixa" }).click();
-      await expect(titular.locator(".guide-coach")).toContainText("Próximo: Faça a primeira venda");
+      // 4. caixa (o passo do estoque já foi feito junto com o produto)
+      await guide("Abra Caixas"); await target.click();
+      await guide("Cadastre o caixa"); await target.click();
+      await guide("Dê um nome ao caixa"); await target.fill("Caixa balcão");
+      await guide("Salve o caixa"); await target.click();
+
+      // 5. abrir o caixa
+      await guide("Abra o caixa do dia"); await target.click();
+      await guide("Fundo de troco"); await target.focus(); await titular.keyboard.press("Tab");
+      await guide("Abra o caixa"); await target.click();
 
       // 6. primeira venda no PDV
-      await titular.getByRole("link", { name: /Faça a primeira venda/ }).click();
-      await expect(titular).toHaveURL(/\/pdv/);
-      const search = titular.waitForResponse((response) => response.url().includes("/api/pos/products?q="));
-      await titular.getByPlaceholder("Nome, SKU ou código de barras").fill("Booster");
-      await expect((await search).ok()).toBeTruthy();
-      await titular.getByText("Booster do Guia").first().click();
-      await titular.getByRole("button", { name: /Finalizar venda/ }).click();
-      await titular.getByLabel("PIX").fill("10,00");
+      await guide("Abra o PDV"); await target.click();
+      await guide("Busque o produto"); await target.fill("Booster");
+      await guide("Adicione ao carrinho"); await target.click();
+      await guide("Finalize a venda"); await target.click();
       const sale = titular.waitForResponse((response) => response.url().endsWith("/api/sales"));
-      await titular.getByRole("button", { name: "Confirmar venda" }).click();
+      await guide("Confirme a venda"); await target.click();
       expect((await sale).status()).toBe(201);
-      await expect(titular.getByText("Venda concluída")).toBeVisible();
 
-      // tudo feito: o cartão some do painel e a página do guia comemora
+      // terminou: comemora uma vez e o guia não volta
+      await expect(titular.getByRole("heading", { name: "Tudo pronto, Titular!" })).toBeVisible({ timeout: 15_000 });
+      await titular.getByRole("button", { name: "Concluir" }).click();
       await titular.goto("/admin");
-      await expect(titular).toHaveURL(/\/admin$/);
-      await expect(titular.locator(".guide-card")).toHaveCount(0);
+      await expect(titular.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+      await expect(titular.locator(".guide-bubble, .guide-welcome, .guide-card")).toHaveCount(0);
       await titular.goto("/admin/primeiros-passos");
       await expect(titular.getByRole("heading", { name: "Tudo pronto para vender" })).toBeVisible();
       await expect(titular.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "6");
@@ -505,6 +493,9 @@ test.describe.serial("fluxos essenciais", () => {
       await login(titular, email, password);
       await titular.goto("/admin");
       await expect(titular.locator(".admin-footer")).toContainText("Todas as lojas (2)");
+      // a demonstração já nasce com a loja pronta: o acesso guiado não tem o que guiar e não aparece
+      await titular.locator("html[data-guide]:not([data-guide=checking])").waitFor({ state: "attached", timeout: 6000 }).catch(() => undefined);
+      await expect(titular.locator(".guide-welcome, .guide-bubble")).toHaveCount(0);
       await expect(titular.getByRole("heading", { name: "Por loja" })).toBeVisible();
       await expect(titular.getByRole("cell", { name: "Loja Centro" })).toBeVisible();
       await expect(titular.getByRole("cell", { name: "Loja Shopping" })).toBeVisible();

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { AlertTriangle, Boxes, PackageOpen, PackageX, Pencil, Plus, SlidersHorizontal, Wallet } from "lucide-react";
 import { ActionForm } from "@/components/action-form";
 import { FilterBar, SearchField } from "@/components/filter-bar";
-import { GuideCoach } from "@/components/guide";
 import { Modal } from "@/components/modal";
 import { ProductStoreTag, StockScope, StoreBreakdown } from "@/components/stock-scope";
 import { Badge, Chips, DateTimeCell, EmptyState, PageHeader, StatCard, Tabs } from "@/components/ui";
@@ -92,7 +91,6 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       </>}
     />
 
-    <GuideCoach user={user} steps={["stock"]}/>
     <StockScope user={user}/>
 
     <section className="stat-grid" aria-label="Resumo do estoque">

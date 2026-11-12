@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, Check, PartyPopper, Store } from "lucide-react";
+import { ArrowRight, Check, Compass, PartyPopper, Store } from "lucide-react";
 import { GuideBar } from "@/components/guide";
-import { GuideWelcomeMark } from "@/components/guide-welcome-mark";
 import { Badge, PageHeader } from "@/components/ui";
 import { requireUser } from "@/modules/auth/session";
 import { dismissGuideAction, resumeGuideAction } from "@/modules/onboarding/actions";
@@ -18,11 +17,13 @@ export default async function GuidePage() {
   const storeName = user.stores.find((store) => store.id === user.activeStoreId)?.name;
 
   return <div className="section-gap">
-    <GuideWelcomeMark/>
     <PageHeader
       eyebrow="Começando"
       title="Primeiros passos"
-      description="Do zero até a primeira venda em seis passos. Cada um abre a tela certa, e a marcação é automática quando você conclui."
+      description="Do zero até a primeira venda em seis passos. Cada um se marca sozinho quando você conclui. O acesso guiado aponta na própria tela onde clicar."
+      actions={progress.complete ? undefined : remembered === "welcomed"
+        ? <Badge tone="info" dot>Acesso guiado ligado</Badge>
+        : <form action={resumeGuideAction}><button type="submit" className="btn btn-primary"><Compass size={16}/>{remembered === "dismissed" ? "Retomar acesso guiado" : "Iniciar acesso guiado"}</button></form>}
     />
 
     {user.stores.length > 1 && <p className="stock-scope" role="status"><Store size={14}/>{user.consolidated
@@ -71,8 +72,8 @@ export default async function GuidePage() {
       </ul>
     </section>
 
-    <form action={remembered === "dismissed" ? resumeGuideAction : dismissGuideAction} className="guide-card-dismiss">
-      <button type="submit" className="link-row">{remembered === "dismissed" ? "Mostrar o guia no painel de novo" : "Dispensar o guia do painel"}</button>
-    </form>
+    {remembered === "welcomed" && !progress.complete && <form action={dismissGuideAction} className="guide-card-dismiss">
+      <button type="submit" className="link-row">Sair do acesso guiado</button>
+    </form>}
   </div>;
 }

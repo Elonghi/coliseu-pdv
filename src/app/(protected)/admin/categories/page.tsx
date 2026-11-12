@@ -1,19 +1,15 @@
 import { Boxes } from "lucide-react";
 import { ActionForm } from "@/components/action-form";
-import { GuideCoach } from "@/components/guide";
 import { Badge, EmptyState, PageHeader } from "@/components/ui";
 import { pool } from "@/db";
 import { categoryAction } from "@/modules/admin/actions";
-import { requireUser } from "@/modules/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function CategoriesPage() {
-  const user = await requireUser();
   const categories = await pool.query<{ id: string; name: string; active: boolean; products: number }>("SELECT c.id,c.name,c.active,count(p.id)::int products FROM categories c LEFT JOIN products p ON p.category_id=c.id GROUP BY c.id ORDER BY c.name");
   return <div className="section-gap">
     <PageHeader eyebrow="Catálogo" title="Categorias" description="Agrupe os produtos para facilitar buscas e relatórios. Categorias inativas não aparecem ao cadastrar novos produtos."/>
-    <GuideCoach user={user} steps={["category"]}/>
 
     <ActionForm action={categoryAction} submitLabel="Adicionar categoria" inline className="card flex flex-wrap items-end gap-3 p-4">
       <label className="label flex-1 min-w-56">Nova categoria<input className="field" name="name" placeholder="Ex.: Acessórios TCG" required/></label>
