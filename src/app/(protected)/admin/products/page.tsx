@@ -4,8 +4,11 @@ import Link from "next/link";
 import { Package, PackageSearch, Pencil, Plus } from "lucide-react";
 import { FilterBar, SearchField } from "@/components/filter-bar";
 import { Badge, EmptyState, Pagination, PageHeader } from "@/components/ui";
+import { StockScope, StoreBreakdown } from "@/components/stock-scope";
 import { pool } from "@/db";
 import { formatMoney } from "@/lib/money";
+import { requireUser } from "@/modules/auth/session";
+import { stockByStore } from "@/modules/stock/breakdown";
 import { stockQuantitySql } from "@/modules/stock/ledger";
 
 export const dynamic = "force-dynamic";
@@ -14,11 +17,12 @@ const PAGE_SIZE = 50;
 type ProductRow = { id: string; sku: string; name: string; sale_price_cents: number; stock_quantity: number; minimum_stock: number; active: boolean; category: string; image_key: string | null; total_count: number };
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const user = await requireUser();
   const query = await searchParams;
   const q = query.q?.trim().slice(0, 120) ?? "";
   const category = query.category ?? "";
   const status = query.status === "active" || query.status === "inactive" ? query.status : "";
-  const stock = query.stock === "low" || query.stock === "empty" ? query.stock : "";
+  const stock = query.stock === "low" || query.stock === "empty" || query.stock === "in" ? query.stock : "";
   const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
 
   const [products, categories] = await Promise.all([
@@ -27,20 +31,24 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       WHERE ($1='' OR p.name ILIKE $2 OR p.sku ILIKE $2 OR COALESCE(p.barcode,'') ILIKE $2)
         AND ($3='' OR p.category_id::text=$3)
         AND ($4='' OR ($4='active' AND p.active) OR ($4='inactive' AND NOT p.active))
-        AND ($5='' OR ($5='empty' AND ${stockQuantitySql("p")}=0) OR ($5='low' AND ${stockQuantitySql("p")}>0 AND ${stockQuantitySql("p")}<=p.minimum_stock))
+        AND ($5='' OR ($5='in' AND ${stockQuantitySql("p")}>0) OR ($5='empty' AND ${stockQuantitySql("p")}=0) OR ($5='low' AND ${stockQuantitySql("p")}>0 AND ${stockQuantitySql("p")}<=p.minimum_stock))
       ORDER BY p.name LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}`, [q, `%${q}%`, category, status, stock]),
     pool.query<{ id: string; name: string }>("SELECT id,name FROM categories ORDER BY name"),
   ]);
   const total = products.rows[0]?.total_count ?? 0;
+  // Na visão de todas as lojas o saldo é a soma; mostrar quanto está em cada uma evita a dúvida de onde estão os itens.
+  const breakdown = user.consolidated ? await stockByStore(products.rows.map((product) => product.id), user.stores) : null;
   const hasFilters = Boolean(q || category || status || stock);
 
   return <div className="section-gap">
     <PageHeader eyebrow="Catálogo" title="Produtos" description="Cadastre, edite e acompanhe o saldo de cada item vendido na loja." actions={<Link className="btn btn-success" href="/admin/products/new"><Plus size={16}/>Novo produto</Link>}/>
 
+    <StockScope user={user}/>
+
     <FilterBar clearHref="/admin/products" hasFilters={hasFilters}>
       <SearchField defaultValue={q} placeholder="Nome, SKU ou código de barras"/>
       <label className="toolbar-field">Categoria<select className="field" name="category" defaultValue={category}><option value="">Todas</option>{categories.rows.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-      <label className="toolbar-field">Estoque<select className="field" name="stock" defaultValue={stock}><option value="">Qualquer</option><option value="low">Baixo</option><option value="empty">Sem estoque</option></select></label>
+      <label className="toolbar-field">Estoque<select className="field" name="stock" defaultValue={stock}><option value="">Qualquer</option><option value="in">Com estoque</option><option value="low">Baixo</option><option value="empty">Sem estoque</option></select></label>
       <label className="toolbar-field">Cadastro<select className="field" name="status" defaultValue={status}><option value="">Ativos e inativos</option><option value="active">Somente ativos</option><option value="inactive">Somente inativos</option></select></label>
     </FilterBar>
 
@@ -55,7 +63,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           </div></td>
           <td>{product.category}</td>
           <td className="num"><b>{formatMoney(product.sale_price_cents)}</b></td>
-          <td className="num"><Badge tone={product.stock_quantity === 0 ? "danger" : product.stock_quantity <= product.minimum_stock ? "warn" : "ok"}>{product.stock_quantity}</Badge></td>
+          <td className="num"><Badge tone={product.stock_quantity === 0 ? "danger" : product.stock_quantity <= product.minimum_stock ? "warn" : "ok"}>{product.stock_quantity}</Badge><StoreBreakdown parts={breakdown?.get(product.id)}/></td>
           <td><Badge tone={product.active ? "ok" : "neutral"} dot>{product.active ? "Ativo" : "Inativo"}</Badge></td>
           <td className="col-actions"><Link className="btn btn-ghost btn-sm" href={`/admin/products/${product.id}`}><Pencil size={14}/>Editar</Link></td>
         </tr>)}</tbody>

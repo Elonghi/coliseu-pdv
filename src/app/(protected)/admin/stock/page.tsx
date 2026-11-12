@@ -3,12 +3,15 @@ import { AlertTriangle, Boxes, PackageOpen, PackageX, Pencil, Plus, SlidersHoriz
 import { ActionForm } from "@/components/action-form";
 import { FilterBar, SearchField } from "@/components/filter-bar";
 import { Modal } from "@/components/modal";
+import { StockScope, StoreBreakdown } from "@/components/stock-scope";
 import { Badge, Chips, DateTimeCell, EmptyState, PageHeader, StatCard, Tabs } from "@/components/ui";
 import { pool } from "@/db";
 import { formatDate, formatSigned } from "@/lib/format";
 import { formatMoney } from "@/lib/money";
 import { queryHref } from "@/lib/query-string";
 import { splitProductAction, stockAction } from "@/modules/admin/actions";
+import { requireUser } from "@/modules/auth/session";
+import { stockByStore } from "@/modules/stock/breakdown";
 import { stockCostSql, stockQuantitySql } from "@/modules/stock/ledger";
 
 export const dynamic = "force-dynamic";
@@ -36,12 +39,13 @@ function AdjustForm({ productId, products }: { productId?: string; products?: { 
 }
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const user = await requireUser();
   const query = await searchParams;
   const tab: Tab = tabs.find((item) => item === query.tab) ?? "produtos";
-  const status = query.status === "low" || query.status === "empty" ? query.status : "all";
+  const status = query.status === "low" || query.status === "empty" || query.status === "in" ? query.status : "all";
   const movementType = query.type && query.type in movementLabel ? query.type : "";
   const q = query.q?.trim().slice(0, 120) ?? "";
-  const statusCondition = status === "empty" ? `AND ${stockQuantitySql("p")}=0` : status === "low" ? `AND ${stockQuantitySql("p")}>0 AND ${stockQuantitySql("p")}<=p.minimum_stock` : "";
+  const statusCondition = status === "in" ? `AND ${stockQuantitySql("p")}>0` : status === "empty" ? `AND ${stockQuantitySql("p")}=0` : status === "low" ? `AND ${stockQuantitySql("p")}>0 AND ${stockQuantitySql("p")}<=p.minimum_stock` : "";
   const PRODUCT_LIMIT = 500;
 
   const [counts, sourceProducts, allProducts, products, movements, dormant, splits] = await Promise.all([
@@ -54,6 +58,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     tab === "aberturas" ? pool.query<SplitRow>("SELECT ps.id,s.name source_name,o.name output_name,ps.source_quantity,ps.output_quantity,ps.source_unit_cost_cents,ps.output_unit_cost_cents,ps.output_sale_price_cents,ps.created_at,u.name user_name FROM product_splits ps JOIN products s ON s.id=ps.source_product_id JOIN products o ON o.id=ps.output_product_id JOIN users u ON u.id=ps.user_id ORDER BY ps.created_at DESC LIMIT 30") : null,
   ]);
   const summary = counts.rows[0];
+  // Na visão de todas as lojas o saldo é a soma; mostrar quanto está em cada uma evita a dúvida de onde estão os itens.
+  const breakdown = user.consolidated && products ? await stockByStore(products.rows.map((product) => product.id), user.stores) : null;
   const tabHref = (value: Tab) => queryHref("/admin/stock", {}, { tab: value === "produtos" ? null : value });
   const hasFilters = Boolean(q || status !== "all" || movementType);
 
@@ -80,6 +86,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       </>}
     />
 
+    <StockScope user={user}/>
+
     <section className="stat-grid" aria-label="Resumo do estoque">
       <StatCard label="Produtos cadastrados" value={summary.total} hint={`${summary.active_count} ativo(s)`} icon={Boxes}/>
       <StatCard label="Estoque baixo" value={summary.low} tone={summary.low ? "warn" : undefined} icon={AlertTriangle} hint="Abaixo do mínimo" href={queryHref("/admin/stock", {}, { status: "low" })}/>
@@ -99,6 +107,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <SearchField defaultValue={q} placeholder="Nome ou SKU do produto"/>
         <Chips label="Situação" items={[
           { label: "Todos", href: queryHref("/admin/stock", query, { status: null }), active: status === "all", count: summary.total },
+          { label: "Com estoque", href: queryHref("/admin/stock", query, { status: "in" }), active: status === "in", count: summary.total - summary.empty },
           { label: "Baixo", href: queryHref("/admin/stock", query, { status: "low" }), active: status === "low", count: summary.low, tone: "warn" },
           { label: "Sem estoque", href: queryHref("/admin/stock", query, { status: "empty" }), active: status === "empty", count: summary.empty, tone: "danger" },
         ]}/>
@@ -110,7 +119,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             const state = situation(product.stock_quantity, product.minimum_stock);
             return <tr key={product.id}>
               <td className="cell-wrap"><span className="cell-main"><b>{product.name}</b><small>{product.sku}{product.is_loose_booster && " · Booster avulso"}{!product.active && " · Inativo — revise preço e cadastro"}</small></span></td>
-              <td className="num"><b>{product.stock_quantity}</b></td>
+              <td className="num"><b>{product.stock_quantity}</b><StoreBreakdown parts={breakdown?.get(product.id)}/></td>
               <td className="num muted">{product.minimum_stock}</td>
               <td><Badge tone={state.tone} dot>{state.label}</Badge></td>
               <td className="num">{formatMoney(product.stock_quantity * product.cost_cents)}</td>

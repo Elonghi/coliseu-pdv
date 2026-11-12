@@ -236,14 +236,29 @@ test.describe.serial("fluxos essenciais", () => {
       // escolhendo a loja, o caixa é gravado nela
       await switcher.selectOption({ label: "Loja E2E" });
       await expect(page.locator(".admin-footer")).toContainText("Loja E2E");
+      // o seletor mostra a loja escolhida (antes voltava para a anterior até recarregar a página)
+      await expect(switcher).toHaveValue(second);
       await page.getByRole("button", { name: "Novo caixa" }).click();
       await page.getByRole("dialog").getByLabel("Nome").fill(registerName);
       await page.getByRole("dialog").getByRole("button", { name: "Cadastrar caixa" }).click();
       await expect.poll(async () => (await db.query<{ store_id: string }>("SELECT store_id FROM cash_registers WHERE name=$1", [registerName])).rows[0]?.store_id).toBe(second);
 
+      // produtos e estoque dizem de qual loja é o saldo; a loja nova não tem saldo nenhum, e "Com estoque" mostra isso
+      await page.goto("/admin/products");
+      await expect(page.locator(".stock-scope")).toContainText("Saldo da loja Loja E2E");
+      await expect(page.locator(".stock-breakdown")).toHaveCount(0);
+      await page.goto("/admin/products?stock=in");
+      await expect(page.getByText("Nenhum produto encontrado")).toBeVisible();
+      await page.goto("/admin/stock?status=in");
+      await expect(page.getByText("Nenhum produto encontrado")).toBeVisible();
+
       // o PDV não funciona na visão de todas as lojas
       await switcher.selectOption({ label: "Todas as lojas" });
+      await expect(switcher).toHaveValue("all");
       await expect(page.locator(".admin-footer")).toContainText("Todas as lojas (2)");
+      await page.goto("/admin/products");
+      await expect(page.locator(".stock-scope")).toContainText("Saldo somado das 2 lojas");
+      await expect(page.locator(".stock-breakdown").first()).toContainText("Loja E2E 0");
       await page.goto("/pdv");
       await expect(page.getByRole("heading", { name: "Escolha a loja do caixa" })).toBeVisible();
     } finally {
