@@ -3,7 +3,7 @@ import { AlertTriangle, Boxes, PackageOpen, PackageX, Pencil, Plus, SlidersHoriz
 import { ActionForm } from "@/components/action-form";
 import { FilterBar, SearchField } from "@/components/filter-bar";
 import { Modal } from "@/components/modal";
-import { StockScope, StoreBreakdown } from "@/components/stock-scope";
+import { ProductStoreTag, StockScope, StoreBreakdown } from "@/components/stock-scope";
 import { Badge, Chips, DateTimeCell, EmptyState, PageHeader, StatCard, Tabs } from "@/components/ui";
 import { pool } from "@/db";
 import { formatDate, formatSigned } from "@/lib/format";
@@ -20,10 +20,12 @@ const movementLabel: Record<string, string> = { INITIAL: "Estoque inicial", MANU
 const tabs = ["produtos", "movimentos", "parado", "aberturas"] as const;
 type Tab = typeof tabs[number];
 
-type ProductRow = { id: string; sku: string; name: string; stock_quantity: number; minimum_stock: number; cost_cents: number; active: boolean; is_loose_booster: boolean };
+type ProductRow = { id: string; sku: string; name: string; stock_quantity: number; minimum_stock: number; cost_cents: number; active: boolean; is_loose_booster: boolean; store_id: string | null };
 type MovementRow = { id: string; type: string; quantity_delta: number; previous_quantity: number; new_quantity: number; notes: string | null; created_at: Date; product: string; username: string };
 type DormantRow = { id: string; sku: string; name: string; stock_quantity: number; cost_cents: number; tied_cents: number; last_sale_at: Date | null };
 type SplitRow = { id: string; source_name: string; output_name: string; source_quantity: number; output_quantity: number; source_unit_cost_cents: number; output_unit_cost_cents: number; output_sale_price_cents: number; created_at: Date; user_name: string };
+
+const PICK_STORE = "Escolha uma loja no seletor: o estoque é de cada loja.";
 
 const situation = (stock: number, minimum: number) => stock === 0 ? { tone: "danger", label: "Sem estoque" } as const : stock <= minimum ? { tone: "warn", label: "Baixo" } as const : { tone: "ok", label: "Normal" } as const;
 
@@ -52,14 +54,14 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     pool.query<{ total: number; active_count: number; empty: number; low: number; value_cents: number }>(`SELECT count(*)::int total,count(*) FILTER (WHERE active)::int active_count,count(*) FILTER (WHERE q=0)::int empty,count(*) FILTER (WHERE q>0 AND q<=minimum_stock)::int low,COALESCE(sum(q::bigint*c),0)::float8 value_cents FROM (SELECT p.active,p.minimum_stock,${stockQuantitySql("p")} q,${stockCostSql("p")} c FROM products p) x`),
     pool.query<{ id: string; sku: string; name: string; stock_quantity: number; cost_cents: number }>(`SELECT p.id,p.sku,p.name,${stockQuantitySql("p")} AS stock_quantity,${stockCostSql("p")} AS cost_cents FROM products p WHERE p.can_split_into_boosters=true AND p.is_loose_booster=false AND ${stockQuantitySql("p")}>0 ORDER BY p.name`),
     pool.query<{ id: string; sku: string; name: string }>("SELECT id,sku,name FROM products ORDER BY active DESC,name"),
-    tab === "produtos" ? pool.query<ProductRow>(`SELECT p.id,p.sku,p.name,${stockQuantitySql("p")} AS stock_quantity,p.minimum_stock,${stockCostSql("p")} AS cost_cents,p.active,p.is_loose_booster FROM products p WHERE ($1='' OR p.name ILIKE $2 OR p.sku ILIKE $2) ${statusCondition} ORDER BY p.active DESC,p.name LIMIT ${PRODUCT_LIMIT}`, [q, `%${q}%`]) : null,
+    tab === "produtos" ? pool.query<ProductRow>(`SELECT p.id,p.sku,p.name,${stockQuantitySql("p")} AS stock_quantity,p.minimum_stock,${stockCostSql("p")} AS cost_cents,p.active,p.is_loose_booster,p.store_id FROM products p WHERE ($1='' OR p.name ILIKE $2 OR p.sku ILIKE $2) ${statusCondition} ORDER BY p.active DESC,p.name LIMIT ${PRODUCT_LIMIT}`, [q, `%${q}%`]) : null,
     tab === "movimentos" ? pool.query<MovementRow>("SELECT sm.id,sm.type,sm.quantity_delta,sm.previous_quantity,sm.new_quantity,sm.notes,sm.created_at,p.name product,COALESCE(u.name,'Automático') username FROM stock_movements sm JOIN products p ON p.id=sm.product_id LEFT JOIN users u ON u.id=sm.user_id WHERE ($1='' OR p.name ILIKE $2 OR p.sku ILIKE $2) AND ($3='' OR sm.type::text=$3) ORDER BY sm.created_at DESC LIMIT 100", [q, `%${q}%`, movementType]) : null,
     tab === "parado" ? pool.query<DormantRow>(`SELECT x.id,x.sku,x.name,x.stock_quantity,x.cost_cents,(x.stock_quantity*x.cost_cents)::int tied_cents,x.last_sale_at FROM (SELECT p.id,p.sku,p.name,${stockQuantitySql("p")} AS stock_quantity,${stockCostSql("p")} AS cost_cents,max(s.created_at) last_sale_at FROM products p LEFT JOIN sale_items si ON si.product_id=p.id LEFT JOIN sales s ON s.id=si.sale_id AND s.status='CONFIRMED' WHERE p.active=true GROUP BY p.id) x WHERE x.stock_quantity>0 AND (x.last_sale_at IS NULL OR x.last_sale_at<now()-interval '90 days') ORDER BY tied_cents DESC LIMIT 50`) : null,
     tab === "aberturas" ? pool.query<SplitRow>("SELECT ps.id,s.name source_name,o.name output_name,ps.source_quantity,ps.output_quantity,ps.source_unit_cost_cents,ps.output_unit_cost_cents,ps.output_sale_price_cents,ps.created_at,u.name user_name FROM product_splits ps JOIN products s ON s.id=ps.source_product_id JOIN products o ON o.id=ps.output_product_id JOIN users u ON u.id=ps.user_id ORDER BY ps.created_at DESC LIMIT 30") : null,
   ]);
   const summary = counts.rows[0];
-  // Na visão de todas as lojas o saldo é a soma; mostrar quanto está em cada uma evita a dúvida de onde estão os itens.
-  const breakdown = user.consolidated && products ? await stockByStore(products.rows.map((product) => product.id), user.stores) : null;
+  // Produto compartilhado na visão de todas as lojas: o saldo é a soma, então mostra quanto está em cada loja.
+  const breakdown = user.consolidated && products ? await stockByStore(products.rows.filter((product) => !product.store_id).map((product) => product.id), user.stores) : null;
   const tabHref = (value: Tab) => queryHref("/admin/stock", {}, { tab: value === "produtos" ? null : value });
   const hasFilters = Boolean(q || status !== "all" || movementType);
 
@@ -68,7 +70,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       eyebrow="Operação"
       title="Estoque"
       description="Acompanhe saldos, registre ajustes com histórico e abra caixas em boosters."
-      actions={<>
+      actions={user.consolidated ? <>
+        <button type="button" className="btn btn-ghost" disabled title={PICK_STORE}><PackageOpen size={16}/>Abrir produto em boosters</button>
+        <button type="button" className="btn btn-primary" disabled title={PICK_STORE}><Plus size={16}/>Ajustar estoque</button>
+      </> : <>
         <Modal trigger={<><PackageOpen size={16}/>Abrir produto em boosters</>} title="Abrir produto em boosters" description="Baixa a quantidade de boxes/unidades informada e gera boosters avulsos. O custo de cada unidade é dividido pelos boosters que ela contém." size="lg">
           {sourceProducts.rowCount
             ? <ActionForm action={splitProductAction} submitLabel="Abrir produto" className="grid gap-4 sm:grid-cols-2">
@@ -118,13 +123,13 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
           <tbody>{products.rows.map((product) => {
             const state = situation(product.stock_quantity, product.minimum_stock);
             return <tr key={product.id}>
-              <td className="cell-wrap"><span className="cell-main"><b>{product.name}</b><small>{product.sku}{product.is_loose_booster && " · Booster avulso"}{!product.active && " · Inativo — revise preço e cadastro"}</small></span></td>
+              <td className="cell-wrap"><span className="cell-main"><b>{product.name}</b><small>{product.sku}{product.is_loose_booster && " · Booster avulso"}{!product.active && " · Inativo — revise preço e cadastro"}</small><ProductStoreTag storeId={product.store_id} stores={user.stores} showStore={user.consolidated}/></span></td>
               <td className="num"><b>{product.stock_quantity}</b><StoreBreakdown parts={breakdown?.get(product.id)}/></td>
               <td className="num muted">{product.minimum_stock}</td>
               <td><Badge tone={state.tone} dot>{state.label}</Badge></td>
               <td className="num">{formatMoney(product.stock_quantity * product.cost_cents)}</td>
               <td className="col-actions"><div className="row-actions">
-                <Modal trigger="Ajustar" triggerClassName="btn btn-ghost btn-sm" title="Ajustar estoque" description={`${product.name} · saldo atual ${product.stock_quantity}`}><AdjustForm productId={product.id}/></Modal>
+                {!user.consolidated && <Modal trigger="Ajustar" triggerClassName="btn btn-ghost btn-sm" title="Ajustar estoque" description={`${product.name} · saldo atual ${product.stock_quantity}`}><AdjustForm productId={product.id}/></Modal>}
                 <Link className="btn btn-ghost btn-sm btn-icon" href={`/admin/products/${product.id}`} title="Editar cadastro do produto" aria-label={`Editar ${product.name}`}><Pencil size={15}/></Link>
               </div></td>
             </tr>;

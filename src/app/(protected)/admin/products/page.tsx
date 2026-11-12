@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Package, PackageSearch, Pencil, Plus } from "lucide-react";
 import { FilterBar, SearchField } from "@/components/filter-bar";
 import { Badge, EmptyState, Pagination, PageHeader } from "@/components/ui";
-import { StockScope, StoreBreakdown } from "@/components/stock-scope";
+import { ProductStoreTag, StockScope, StoreBreakdown } from "@/components/stock-scope";
 import { pool } from "@/db";
 import { formatMoney } from "@/lib/money";
 import { requireUser } from "@/modules/auth/session";
@@ -14,7 +14,7 @@ import { stockQuantitySql } from "@/modules/stock/ledger";
 export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
 
-type ProductRow = { id: string; sku: string; name: string; sale_price_cents: number; stock_quantity: number; minimum_stock: number; active: boolean; category: string; image_key: string | null; total_count: number };
+type ProductRow = { id: string; sku: string; name: string; sale_price_cents: number; stock_quantity: number; minimum_stock: number; active: boolean; store_id: string | null; category: string; image_key: string | null; total_count: number };
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requireUser();
@@ -26,7 +26,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
 
   const [products, categories] = await Promise.all([
-    pool.query<ProductRow>(`SELECT p.id,p.sku,p.name,p.sale_price_cents,${stockQuantitySql("p")} AS stock_quantity,p.minimum_stock,p.active,p.image_key,c.name category,count(*) OVER()::int total_count
+    pool.query<ProductRow>(`SELECT p.id,p.sku,p.name,p.sale_price_cents,${stockQuantitySql("p")} AS stock_quantity,p.minimum_stock,p.active,p.store_id,p.image_key,c.name category,count(*) OVER()::int total_count
       FROM products p JOIN categories c ON c.id=p.category_id
       WHERE ($1='' OR p.name ILIKE $2 OR p.sku ILIKE $2 OR COALESCE(p.barcode,'') ILIKE $2)
         AND ($3='' OR p.category_id::text=$3)
@@ -36,12 +36,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     pool.query<{ id: string; name: string }>("SELECT id,name FROM categories ORDER BY name"),
   ]);
   const total = products.rows[0]?.total_count ?? 0;
-  // Na visão de todas as lojas o saldo é a soma; mostrar quanto está em cada uma evita a dúvida de onde estão os itens.
-  const breakdown = user.consolidated ? await stockByStore(products.rows.map((product) => product.id), user.stores) : null;
+  // Produto compartilhado na visão de todas as lojas: o saldo é a soma, então mostra quanto está em cada loja.
+  const breakdown = user.consolidated ? await stockByStore(products.rows.filter((product) => !product.store_id).map((product) => product.id), user.stores) : null;
   const hasFilters = Boolean(q || category || status || stock);
 
   return <div className="section-gap">
-    <PageHeader eyebrow="Catálogo" title="Produtos" description="Cadastre, edite e acompanhe o saldo de cada item vendido na loja." actions={<Link className="btn btn-success" href="/admin/products/new"><Plus size={16}/>Novo produto</Link>}/>
+    <PageHeader eyebrow="Catálogo" title="Produtos" description="Cadastre, edite e acompanhe o saldo dos itens vendidos em cada loja." actions={user.consolidated
+      ? <button type="button" className="btn btn-success" disabled title="Escolha uma loja no seletor: o produto nasce na loja ativa."><Plus size={16}/>Novo produto</button>
+      : <Link className="btn btn-success" href="/admin/products/new"><Plus size={16}/>Novo produto</Link>}/>
 
     <StockScope user={user}/>
 
@@ -59,7 +61,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         <tbody>{products.rows.map((product) => <tr key={product.id}>
           <td className="cell-wrap"><div className="flex items-center gap-3">
             {product.image_key ? <img src={`/api/uploads/${product.image_key}`} alt="" className="thumb"/> : <span className="thumb thumb-empty"><Package size={18}/></span>}
-            <span className="cell-main"><Link className="link-row" href={`/admin/products/${product.id}`}>{product.name}</Link><small>{product.sku}</small></span>
+            <span className="cell-main"><Link className="link-row" href={`/admin/products/${product.id}`}>{product.name}</Link><small>{product.sku}</small><ProductStoreTag storeId={product.store_id} stores={user.stores} showStore={user.consolidated}/></span>
           </div></td>
           <td>{product.category}</td>
           <td className="num"><b>{formatMoney(product.sale_price_cents)}</b></td>

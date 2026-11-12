@@ -243,22 +243,30 @@ test.describe.serial("fluxos essenciais", () => {
       await page.getByRole("dialog").getByRole("button", { name: "Cadastrar caixa" }).click();
       await expect.poll(async () => (await db.query<{ store_id: string }>("SELECT store_id FROM cash_registers WHERE name=$1", [registerName])).rows[0]?.store_id).toBe(second);
 
-      // produtos e estoque dizem de qual loja é o saldo; a loja nova não tem saldo nenhum, e "Com estoque" mostra isso
+      // cada loja tem os seus produtos: a loja nova começa sem nenhum (o banco só devolve os dela), e o aviso diz de qual loja é a lista
+      const enforced = Boolean(process.env.APP_DATABASE_URL);
       await page.goto("/admin/products");
-      await expect(page.locator(".stock-scope")).toContainText("Saldo da loja Loja E2E");
-      await expect(page.locator(".stock-breakdown")).toHaveCount(0);
-      await page.goto("/admin/products?stock=in");
-      await expect(page.getByText("Nenhum produto encontrado")).toBeVisible();
-      await page.goto("/admin/stock?status=in");
-      await expect(page.getByText("Nenhum produto encontrado")).toBeVisible();
+      await expect(page.locator(".stock-scope")).toContainText("Produtos e saldo da loja Loja E2E");
+      await expect(page.getByRole("link", { name: "Novo produto" }).first()).toBeVisible();
+      if (enforced) {
+        await expect(page.getByText("Nenhum produto encontrado")).toBeVisible();
+        await page.goto("/admin/stock");
+        await expect(page.getByText("Nenhum produto encontrado")).toBeVisible();
+      }
 
       // o PDV não funciona na visão de todas as lojas
       await switcher.selectOption({ label: "Todas as lojas" });
       await expect(switcher).toHaveValue("all");
       await expect(page.locator(".admin-footer")).toContainText("Todas as lojas (2)");
+      // na visão de todas as lojas cada produto mostra a loja dele, e o que exige uma loja fica desabilitado
+      const firstStore = (await db.query<{ name: string }>("SELECT name FROM stores WHERE account_id=$1 AND id<>$2 ORDER BY created_at LIMIT 1", [account, second])).rows[0].name;
       await page.goto("/admin/products");
-      await expect(page.locator(".stock-scope")).toContainText("Saldo somado das 2 lojas");
-      await expect(page.locator(".stock-breakdown").first()).toContainText("Loja E2E 0");
+      await expect(page.locator(".stock-scope")).toContainText("Produtos e saldos das 2 lojas");
+      await expect(page.locator(".stock-breakdown").first()).toHaveText(firstStore);
+      await expect(page.getByRole("button", { name: "Novo produto" })).toBeDisabled();
+      await page.goto("/admin/stock");
+      await expect(page.getByRole("button", { name: "Ajustar estoque" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Abrir produto em boosters" })).toBeDisabled();
       await page.goto("/pdv");
       await expect(page.getByRole("heading", { name: "Escolha a loja do caixa" })).toBeVisible();
     } finally {
@@ -400,6 +408,14 @@ test.describe.serial("fluxos essenciais", () => {
       await expect(titular.getByText("Entrada concluída")).toBeVisible({ timeout: 30_000 });
       await titular.goto("/admin/products");
       await expect(titular.getByText("Play Booster Bloomburrow").first()).toBeVisible();
+      // cada loja com os seus produtos: a Shopping não trabalha com cartas avulsas
+      await titular.getByLabel("Loja ativa").selectOption({ label: "Loja Centro" });
+      await expect(titular.locator(".stock-scope")).toContainText("Loja Centro");
+      await expect(titular.getByText("Carta avulsa — Anel Solar (NM)")).toBeVisible();
+      await titular.getByLabel("Loja ativa").selectOption({ label: "Loja Shopping" });
+      await expect(titular.locator(".stock-scope")).toContainText("Loja Shopping");
+      await expect(titular.getByText("Play Booster Bloomburrow").first()).toBeVisible();
+      await expect(titular.getByText("Carta avulsa — Anel Solar (NM)")).toHaveCount(0);
       await titularContext.close();
 
       const managerContext = await browser.newContext();

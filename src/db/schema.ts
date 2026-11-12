@@ -96,7 +96,8 @@ export const userStores = pgTable("user_stores", {
 
 export const products = pgTable("products", {
   accountId: uuid("account_id").notNull().default(sql`app_current_account()`).references(() => accounts.id, { onDelete: "restrict" }),
-  storeId: uuid("store_id").references(() => stores.id, { onDelete: "restrict" }),
+  // Dono do produto: a loja ativa na criação. Vazio = compartilhado entre as lojas do lojista (só produtos que já existiam em mais de uma loja).
+  storeId: uuid("store_id").default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
   id: uuid("id").defaultRandom().primaryKey(),
   sku: varchar("sku", { length: 60 }).notNull(),
   barcode: varchar("barcode", { length: 64 }),
@@ -116,7 +117,7 @@ export const products = pgTable("products", {
   tcgRarity: varchar("tcg_rarity", { length: 80 }),
   tcgCondition: varchar("tcg_condition", { length: 40 }),
   active: boolean("active").default(true).notNull(), ...timestamps,
-}, (t) => [uniqueIndex("products_account_sku_uidx").on(t.accountId, t.sku), uniqueIndex("products_account_barcode_uidx").on(t.accountId, t.barcode), index("products_account_idx").on(t.accountId), 
+}, (t) => [uniqueIndex("products_scope_sku_uidx").on(t.accountId, sql`coalesce(${t.storeId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.sku), uniqueIndex("products_scope_barcode_uidx").on(t.accountId, sql`coalesce(${t.storeId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.barcode), index("products_account_idx").on(t.accountId), 
   check("products_money_nonnegative", sql`${t.costCents} >= 0 AND ${t.salePriceCents} >= 0`),
   check("products_discount_valid", sql`${t.maxDiscountBps} BETWEEN 0 AND 10000`),
   check("products_stock_nonnegative", sql`${t.stockQuantity} >= 0 AND ${t.minimumStock} >= 0`),
@@ -146,7 +147,7 @@ export const supplierProductMappings = pgTable("supplier_product_mappings", {
   productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
   ...timestamps,
 }, (t) => [index("supplier_product_mappings_account_idx").on(t.accountId), 
-  uniqueIndex("supplier_product_mappings_account_supplier_code_uidx").on(t.accountId, t.supplierDocument, t.supplierProductCode),
+  uniqueIndex("supplier_product_mappings_scope_supplier_code_uidx").on(t.accountId, sql`coalesce(${t.storeId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.supplierDocument, t.supplierProductCode),
   index("supplier_product_mappings_product_idx").on(t.productId),
 ]);
 

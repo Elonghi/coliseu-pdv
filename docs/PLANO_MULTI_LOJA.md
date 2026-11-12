@@ -233,10 +233,11 @@ Assumido por padrão, ajustável:
 | Aviso de migration pendente e diagnóstico no `/api/health` | Pronto |
 | Usuário de administrador do sistema criado por script (`platform-admin.mjs --create`) | Pronto (runbook, seção 12.1) |
 | Cliente de demonstração (duas lojas, equipe, catálogo, notas, financeiro e vendas) pelo painel ou por comando | Pronto (runbook, seção 12.2) |
+| Produtos por loja: cada loja com o seu catálogo, SKU e código de barras únicos por loja, travas entre lojas | Pronto (0019; runbook, seção 8). Produtos que várias lojas já usavam continuam compartilhados |
 
 Ainda não implementado, de propósito:
 
-- **Transferência de estoque entre lojas** do mesmo lojista e **compartilhamento** de catálogo, fornecedores e jogadores por escolha do lojista. A estrutura já comporta (produtos e jogadores têm `store_id` opcional, e o estoque é por loja), faltam as telas e as regras de unir cadastros.
+- **Transferência de estoque entre lojas** do mesmo lojista e **compartilhamento** de catálogo, fornecedores e jogadores por escolha do lojista. A estrutura já comporta: desde a 0019 todo produto novo é da loja onde nasceu (`store_id`), e `store_id` vazio significa compartilhado; faltam as telas para compartilhar um item e as regras de unir cadastros (hoje só existem compartilhados herdados de antes da 0019).
 - **Configuração fiscal por loja** (certificado e CNPJ no banco): hoje vem do ambiente, e as notas entram na loja com o CNPJ configurado.
 - **Cadastro de lojista pelo site** e cobrança por plano: hoje só pelo painel do sistema.
 - Endurecimentos opcionais: remover as colunas antigas de estoque de `products` (depois de alguns dias estável) e numeração de vendas e pedidos por loja.

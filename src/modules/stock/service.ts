@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
-import { lockProducts, lockStock, requireActiveStore, setStock } from "./ledger";
+import { lockProducts, lockStock, productOfActiveStoreSql, requireActiveStore, setStock } from "./ledger";
 
 type SplitProductInput = {
   sourceProductId: string;
@@ -53,8 +53,8 @@ export async function splitProductIntoBoosters(input: SplitProductInput, userId:
     if(source.stock_quantity<input.sourceQuantity)throw new AppError(`Estoque insuficiente: há ${source.stock_quantity} unidade(s) disponível(is), mas foram solicitadas ${input.sourceQuantity}.`,409,"INSUFFICIENT_STOCK");
 
     const outputUnitCostCents=Math.round(source.cost_cents/input.boostersPerSource);
-    await client.query("SELECT id FROM products WHERE lower(name)=lower($1) ORDER BY id FOR UPDATE",[outputName]);
-    const namedProducts=await client.query<{id:string;stock_quantity:number;cost_cents:number;is_loose_booster:boolean}>(`SELECT p.id,COALESCE(ps.quantity,0)::int AS stock_quantity,COALESCE(ps.cost_cents,p.cost_cents)::int AS cost_cents,p.is_loose_booster FROM products p LEFT JOIN product_stock ps ON ps.product_id=p.id AND ps.store_id=app_current_store() WHERE lower(p.name)=lower($1) ORDER BY p.is_loose_booster DESC,p.created_at FOR UPDATE OF p`,[outputName]);
+    await client.query(`SELECT p.id FROM products p WHERE lower(p.name)=lower($1) AND ${productOfActiveStoreSql("p")} ORDER BY p.id FOR UPDATE`,[outputName]);
+    const namedProducts=await client.query<{id:string;stock_quantity:number;cost_cents:number;is_loose_booster:boolean}>(`SELECT p.id,COALESCE(ps.quantity,0)::int AS stock_quantity,COALESCE(ps.cost_cents,p.cost_cents)::int AS cost_cents,p.is_loose_booster FROM products p LEFT JOIN product_stock ps ON ps.product_id=p.id AND ps.store_id=app_current_store() WHERE lower(p.name)=lower($1) AND ${productOfActiveStoreSql("p")} ORDER BY p.is_loose_booster DESC,p.created_at FOR UPDATE OF p`,[outputName]);
     const existing=namedProducts.rows.find(product=>product.is_loose_booster);
     if(!existing&&namedProducts.rowCount)throw new AppError("Já existe um produto com este nome que não está marcado como booster avulso.",409,"PRODUCT_NAME_CONFLICT");
 

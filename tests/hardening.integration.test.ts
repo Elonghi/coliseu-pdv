@@ -39,8 +39,8 @@ suite("endurecimento: unicidade por lojista, consistência entre lojas e formas 
       return db.query("INSERT INTO products(sku,barcode,name,category_id,unit_id,cost_cents,sale_price_cents,account_id) VALUES ($1,$2,'Produto',$3,$4,1,2,$5)", [sku, barcode, cat, unit, account]);
     };
     await product(accountA, "SKU-1", "789"); await product(accountB, "SKU-1", "789");
-    await expect(product(accountA, "SKU-1", null)).rejects.toThrow(/products_account_sku_uidx/);
-    await expect(product(accountA, "SKU-2", "789")).rejects.toThrow(/products_account_barcode_uidx/);
+    await expect(product(accountA, "SKU-1", null)).rejects.toThrow(/products_scope_sku_uidx/);
+    await expect(product(accountA, "SKU-2", "789")).rejects.toThrow(/products_scope_barcode_uidx/);
     await db.query("INSERT INTO suppliers(name,document,account_id) VALUES ('F','12345678000199',$1),('F','12345678000199',$2)", [accountA, accountB]);
     await expect(db.query("INSERT INTO suppliers(name,document,account_id) VALUES ('F2','12345678000199',$1)", [accountA])).rejects.toThrow(/suppliers_account_document_uidx/);
   });

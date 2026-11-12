@@ -35,6 +35,9 @@ const dateTimeLocal = (date: Date) => date.toISOString().slice(0, 16);
 type StoreRef = { id: string; name: string; cnpj: string };
 type Catalog = Map<string, DemoProduct & { id: string; ean: string }>;
 
+/** A primeira loja trabalha com todo o catálogo de demonstração; a segunda, com uma seleção menor. */
+const carries = (storeIndex: number, product: DemoProduct, index: number) => storeIndex === 0 || (product.kind !== "single" && !(product.kind === "sealed" && index % 3 === 0));
+
 const quantityFor = (product: DemoProduct, plan: "A" | "B" | "C", factor: number) => {
   const base = { booster: 48, sealed: 8, single: 4, accessory: 24, snack: 36 }[product.kind];
   return Math.max(2, Math.round(base * factor * (plan === "A" ? 1 : plan === "B" ? 0.5 : 0.35)));
@@ -82,26 +85,17 @@ export async function createDemoAccount(input: DemoInput, actorId: string, optio
     });
     const operators = [memberIds.get(teamEmail("caixa-centro"))!, memberIds.get(teamEmail("caixa-shopping"))!];
 
-    // Catálogo, fornecedores e jogadores são do lojista: valem para as duas lojas.
-    const catalog: Catalog = new Map();
+    // Fornecedores, jogadores e categorias são do lojista e valem para as duas lojas. Os produtos são de cada loja (abaixo).
+    const catalogs: Catalog[] = stores.map(() => new Map());
     const supplierIds: string[] = [];
     const playerIds: { id: string; credit: number }[] = [];
+    let units = new Map<string, string>();
+    const categories = new Map<string, string>();
     await inStore(stores[0], async () => {
       await pool.query("INSERT INTO units (code,name) VALUES ('UN','Unidade'),('PCT','Pacote'),('CX','Caixa') ON CONFLICT (code) DO NOTHING");
-      const units = new Map((await pool.query<{ id: string; code: string }>("SELECT id,code FROM units WHERE code IN ('UN','PCT','CX')")).rows.map((row) => [row.code, row.id]));
-      const categories = new Map<string, string>();
+      units = new Map((await pool.query<{ id: string; code: string }>("SELECT id,code FROM units WHERE code IN ('UN','PCT','CX')")).rows.map((row) => [row.code, row.id]));
       for (const category of new Set(demoCatalog.map((product) => product.category))) {
         categories.set(category, (await pool.query<{ id: string }>("INSERT INTO categories (name) VALUES ($1) RETURNING id", [category])).rows[0].id);
-      }
-      for (const [index, product] of demoCatalog.entries()) {
-        const ean = demoEan(index + 1);
-        const id = await createProduct({
-          sku: product.sku, barcode: ean, name: product.name, description: product.description ?? null, categoryId: categories.get(product.category)!, unitId: units.get(product.unit)!,
-          costCents: product.costCents, salePriceCents: product.priceCents, maxDiscountBps: product.maxDiscountBps, minimumStock: product.minimumStock,
-          canSplitIntoBoosters: product.splittable ?? false, isLooseBooster: product.loose ?? false,
-          tcgGame: product.tcgGame ?? null, tcgSetName: product.tcgSet ?? null, tcgLanguage: product.tcgLanguage ?? null, tcgCondition: product.tcgCondition ?? null, tcgRarity: product.tcgRarity ?? null, active: true,
-        }, 0, titular);
-        catalog.set(product.sku, { ...product, id, ean });
       }
       for (const [index, supplier] of demoSuppliers.entries()) supplierIds.push(await createSupplier({ name: supplier.name, document: demoCnpj(10 + index), email: supplier.email, phone: supplier.phone }, titular));
       for (const player of demoPlayers) {
@@ -112,12 +106,28 @@ export async function createDemoAccount(input: DemoInput, actorId: string, optio
     });
 
     const failures = new Set<string>();
-    const counts = { stores: stores.length, products: catalog.size, players: playerIds.length, invoices: 0, sales: 0, canceled: 0, payables: 0, purchaseOrders: 0, failedSales: 0 };
+    const counts = { stores: stores.length, products: 0, players: playerIds.length, invoices: 0, sales: 0, canceled: 0, payables: 0, purchaseOrders: 0, failedSales: 0 };
 
     for (const [storeIndex, store] of stores.entries()) {
       const operator = operators[storeIndex];
       const factor = storeIndex === 0 ? 1 : 0.7;
+      const catalog = catalogs[storeIndex];
       await inStore(store, async () => {
+        // Cada loja tem o seu catálogo (mesmo SKU e código de barras podem repetir entre lojas). A segunda não trabalha com cartas
+        // avulsas e tem uma seleção menor de produtos fechados, para a separação por loja aparecer nas listas.
+        for (const [index, product] of demoCatalog.entries()) {
+          if (!carries(storeIndex, product, index)) continue;
+          const ean = demoEan(index + 1);
+          const id = await createProduct({
+            sku: product.sku, barcode: ean, name: product.name, description: product.description ?? null, categoryId: categories.get(product.category)!, unitId: units.get(product.unit)!,
+            costCents: product.costCents, salePriceCents: product.priceCents, maxDiscountBps: product.maxDiscountBps, minimumStock: product.minimumStock,
+            canSplitIntoBoosters: product.splittable ?? false, isLooseBooster: product.loose ?? false,
+            tcgGame: product.tcgGame ?? null, tcgSetName: product.tcgSet ?? null, tcgLanguage: product.tcgLanguage ?? null, tcgCondition: product.tcgCondition ?? null, tcgRarity: product.tcgRarity ?? null, active: true,
+          }, 0, titular);
+          catalog.set(product.sku, { ...product, id, ean });
+        }
+        counts.products += catalog.size;
+
         // Caixa aberto desde o começo do período, para as vendas em dinheiro.
         await createCashRegister("Caixa 1", titular);
         const register = (await pool.query<{ id: string }>("SELECT id FROM cash_registers ORDER BY created_at DESC LIMIT 1")).rows[0].id;
@@ -132,7 +142,7 @@ export async function createDemoAccount(input: DemoInput, actorId: string, optio
           { key: "C", daysAgo: 2, supplier: 0, due: [28], filter: (p: DemoProduct) => ["sealed", "single"].includes(p.kind) },
         ] as const;
         for (const [planIndex, plan] of plans.entries()) {
-          const items: NfeItem[] = demoCatalog.filter(plan.filter).map((product) => ({ sku: product.sku, name: product.name, ean: catalog.get(product.sku)!.ean, unit: product.unit, quantity: quantityFor(product, plan.key, factor), unitCostCents: product.costCents }));
+          const items: NfeItem[] = demoCatalog.filter((product) => catalog.has(product.sku) && plan.filter(product)).map((product) => ({ sku: product.sku, name: product.name, ean: catalog.get(product.sku)!.ean, unit: product.unit, quantity: quantityFor(product, plan.key, factor), unitCostCents: product.costCents }));
           const nfe = buildNfe({
             number: 1000 + storeIndex * 100 + planIndex * 10 + 1, emittedAt: new Date(now.getTime() - plan.daysAgo * DAY), supplier: { name: demoSuppliers[plan.supplier].name, cnpj: demoCnpj(10 + plan.supplier) },
             recipient: { name: store.name, cnpj: store.cnpj }, items, dueInDays: [...plan.due], random,

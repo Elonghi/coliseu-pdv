@@ -18,6 +18,10 @@ export const stockQuantitySql = (alias = "p") =>
 export const stockCostSql = (alias = "p") =>
   `COALESCE((SELECT round(sum(ps.cost_cents::numeric*ps.quantity)/NULLIF(sum(ps.quantity),0)) FROM product_stock ps WHERE ps.product_id=${alias}.id AND ps.store_id=ANY(app_store_ids())),${alias}.cost_cents)::int`;
 
+/** O produto é da loja ativa ou compartilhado. Sob RLS o banco já filtra; isto garante o mesmo quando a conexão não tem RLS
+ * (em operações de uma loja só: venda, nota fiscal, abertura de box), para nunca casar com o produto de outra loja. */
+export const productOfActiveStoreSql = (alias = "p") => `(${alias}.store_id IS NULL OR ${alias}.store_id=app_current_store())`;
+
 /** Trava as linhas dos produtos, em ordem para não travar em ciclo. Tem de ser uma instrução à parte, ANTES de ler o saldo:
  * o saldo está em product_stock, que a trava da linha do produto não cobre. Lido na mesma instrução, em READ COMMITTED,
  * ele viria da fotografia antiga e duas vendas do último item passariam as duas. */

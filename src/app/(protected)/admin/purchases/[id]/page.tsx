@@ -22,7 +22,8 @@ export default async function PurchaseDetail({ params }: { params: Promise<{ id:
   const [order, items, products, invoices] = await Promise.all([
     pool.query("SELECT po.*,s.name supplier,fi.number invoice_number,fi.total_cents invoice_total FROM purchase_orders po JOIN suppliers s ON s.id=po.supplier_id LEFT JOIN fiscal_invoices fi ON fi.id=po.fiscal_invoice_id WHERE po.id=$1", [id]),
     pool.query("SELECT poi.*,p.name product,p.sku FROM purchase_order_items poi JOIN products p ON p.id=poi.product_id WHERE poi.order_id=$1 ORDER BY p.name", [id]),
-    pool.query("SELECT id,sku,name,cost_cents FROM products WHERE active=true ORDER BY name LIMIT 500"),
+    // O pedido é de uma loja: só os produtos dela (e os compartilhados), mesmo na visão de todas as lojas.
+    pool.query("SELECT p.id,p.sku,p.name,p.cost_cents FROM products p WHERE p.active=true AND (p.store_id IS NULL OR p.store_id=(SELECT store_id FROM purchase_orders WHERE id=$1)) ORDER BY p.name LIMIT 500", [id]),
     pool.query("SELECT id,number,issuer_name,total_cents FROM fiscal_invoices WHERE status='AUTHORIZED' AND has_full_xml=true ORDER BY issue_at DESC LIMIT 100"),
   ]);
   const data = order.rows[0];

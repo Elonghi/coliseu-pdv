@@ -3,7 +3,7 @@ import type { PoolClient } from "pg";
 import { pool } from "@/db";
 import { AppError } from "@/lib/errors";
 import { isSplittableSealedProduct } from "@/modules/catalog/classification";
-import { lockStock, setStock, enterStore } from "@/modules/stock/ledger";
+import { lockStock, setStock, enterStore, productOfActiveStoreSql } from "@/modules/stock/ledger";
 
 type FiscalStockInput = {
   invoiceId: string;
@@ -53,13 +53,14 @@ async function resolveProduct(client: PoolClient, item: FiscalItemRow, input: Fi
   const supplierCode = (normalizedCode(item.product_code) ?? (ean ? `EAN:${ean}` : `DESC:${normalizedCode(item.description)}`))?.slice(0, 180);
   if (!supplierCode) throw new Error("Item fiscal sem código, EAN ou descrição para vinculação ao catálogo.");
 
+  // Cada loja tem os seus produtos e vínculos: o da loja da nota vale antes do compartilhado.
   const mapped = await client.query<{ id: string }>(`SELECT p.id FROM supplier_product_mappings m JOIN products p ON p.id=m.product_id
-    WHERE m.supplier_document=$1 AND m.supplier_product_code=$2 LIMIT 1`, [supplierDocument, supplierCode]);
+    WHERE m.supplier_document=$1 AND m.supplier_product_code=$2 AND ${productOfActiveStoreSql("p")} ORDER BY p.store_id NULLS LAST LIMIT 1`, [supplierDocument, supplierCode]);
   if (mapped.rows[0]) return { productId: mapped.rows[0].id, created: false };
 
-  const byCatalog = await client.query<{ id: string }>(`SELECT id FROM products
-    WHERE ($1::text IS NOT NULL AND barcode=$1) OR upper(sku)=$2 OR lower(name)=lower($3)
-    ORDER BY CASE WHEN barcode=$1 THEN 0 WHEN upper(sku)=$2 THEN 1 ELSE 2 END,active DESC LIMIT 1`, [ean ?? null, normalizedCode(item.product_code) ?? "", item.description]);
+  const byCatalog = await client.query<{ id: string }>(`SELECT p.id FROM products p
+    WHERE ${productOfActiveStoreSql("p")} AND (($1::text IS NOT NULL AND p.barcode=$1) OR upper(p.sku)=$2 OR lower(p.name)=lower($3))
+    ORDER BY CASE WHEN p.barcode=$1 THEN 0 WHEN upper(p.sku)=$2 THEN 1 ELSE 2 END,p.active DESC,p.store_id NULLS LAST LIMIT 1`, [ean ?? null, normalizedCode(item.product_code) ?? "", item.description]);
   let productId = byCatalog.rows[0]?.id;
   let created = false;
   if (!productId) {
@@ -73,14 +74,16 @@ async function resolveProduct(client: PoolClient, item: FiscalItemRow, input: Fi
       VALUES ($1,$2,$3,$4,$5,$6,$7,$7,0,0,0,$8,false) ON CONFLICT DO NOTHING RETURNING id`, [sku, ean ?? null, item.description.slice(0, 180), description, categoryId, unitId, unitCostCents, canSplitIntoBoosters]);
     productId = inserted.rows[0]?.id;
     created = Boolean(productId);
-    if (!productId) productId = (await client.query<{ id: string }>("SELECT id FROM products WHERE sku=$1", [sku])).rows[0]?.id;
+    if (!productId) productId = (await client.query<{ id: string }>(`SELECT p.id FROM products p WHERE p.sku=$1 AND ${productOfActiveStoreSql("p")} ORDER BY p.store_id NULLS LAST LIMIT 1`, [sku])).rows[0]?.id;
     if (!productId) throw new Error("Não foi possível criar ou localizar o produto do item fiscal.");
     if (created) await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'FISCAL_PRODUCT_CREATE','product',$2,$3)", [input.actorId ?? null, productId, JSON.stringify({ invoiceId: input.invoiceId, accessKey: input.accessKey, supplierCode, ean, inactive: true })]);
   }
   if (isSplittableSealedProduct(item.description)) await client.query("UPDATE products SET can_split_into_boosters=true,updated_at=now() WHERE id=$1 AND is_loose_booster=false", [productId]);
-  await client.query(`INSERT INTO supplier_product_mappings (supplier_document,supplier_product_code,product_id)
-    VALUES ($1,$2,$3) ON CONFLICT (account_id,supplier_document,supplier_product_code) DO NOTHING`, [supplierDocument, supplierCode, productId]);
-  const definitive = await client.query<{ product_id: string }>("SELECT product_id FROM supplier_product_mappings WHERE supplier_document=$1 AND supplier_product_code=$2", [supplierDocument, supplierCode]);
+  // O vínculo segue a loja do produto (compartilhado, se o produto for compartilhado).
+  await client.query(`INSERT INTO supplier_product_mappings (supplier_document,supplier_product_code,product_id,store_id)
+    SELECT $1,$2,p.id,p.store_id FROM products p WHERE p.id=$3 ON CONFLICT DO NOTHING`, [supplierDocument, supplierCode, productId]);
+  const definitive = await client.query<{ product_id: string }>(`SELECT m.product_id FROM supplier_product_mappings m JOIN products p ON p.id=m.product_id
+    WHERE m.supplier_document=$1 AND m.supplier_product_code=$2 AND ${productOfActiveStoreSql("p")} ORDER BY p.store_id NULLS LAST LIMIT 1`, [supplierDocument, supplierCode]);
   return { productId: definitive.rows[0]?.product_id ?? productId, created };
 }
 

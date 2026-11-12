@@ -163,6 +163,31 @@ Também confira `/api/health`: deve trazer `"migrations": {"pending": false}`.
 
 Volta atrás: o app antigo continua funcionando com o banco novo (as colunas antigas seguem coerentes). Para desfazer a migration, restaure o backup.
 
+### 0019 `produtos_por_loja` (cada loja com os seus produtos)
+
+Cada produto passa a ter uma **loja dona** (`products.store_id`, preenchida na criação com a loja ativa). A lista de produtos, o estoque, a abertura de box, o PDV e as notas de uma loja só enxergam os produtos dela. Por isso:
+
+- a unicidade de SKU e de código de barras passa a valer **por loja** (a mesma loja não repete, lojas diferentes podem usar o mesmo SKU);
+- o vínculo fornecedor-produto também é por loja, e a entrada de nota cria o produto na loja da nota;
+- gatilhos impedem que saldo, movimento, venda, compra, nota, inventário ou abertura de box liguem uma loja ao produto de outra;
+- **produtos que já existem**: lojista com **uma loja só** leva todos os produtos para ela (uma loja criada depois começa com o catálogo vazio). Lojista com **várias** lojas: cada produto vai para a loja que o usa (saldo, movimento, venda, compra, nota, inventário ou vínculo). Se várias lojas já o usam, ou nenhuma, ele continua **compartilhado** e aparece com a etiqueta "Compartilhado entre as lojas". Nada some de uma loja que já usava o produto.
+
+**Ordem, ao contrário da regra geral (seção 3):** envie o **código primeiro** e aplique a migration **depois**. A migration troca o índice único que o código antigo usa na entrada de nota (`ON CONFLICT`); com o código antigo e o banco novo, a entrada de nota falha. O código novo funciona com o banco antes e depois da migration; no intervalo, produtos criados nascem sem loja e a migration os ajusta (no lojista de uma loja só, vão para ela).
+
+**Janela:** curta (recria três índices e atualiza `products`). Faça com o backup feito, de preferência fora do horário de uso.
+
+Depois de aplicar, no banco:
+
+```sql
+SELECT a.name AS lojista, (SELECT count(*) FROM stores s WHERE s.account_id=a.id) AS lojas,
+       count(*) AS produtos, count(*) FILTER (WHERE p.store_id IS NULL) AS compartilhados
+FROM products p JOIN accounts a ON a.id=p.account_id GROUP BY a.id, a.name ORDER BY 1;
+```
+
+Esperado: lojista com **uma loja** com `compartilhados` = 0. Lojista com várias lojas: só os produtos usados por mais de uma loja ficam compartilhados. Confira também `/api/health` (`"migrations": {"pending": false}`) e abra Produtos em cada loja pelo seletor.
+
+Volta atrás: a migration **altera dados** (loja dos produtos) e remove índices. Restaure o backup (seção 5); não volte só o código.
+
 ## 9. Ativar o isolamento entre lojistas (papel de banco sem privilégio)
 
 As travas do banco (RLS) já existem depois da 0018, mas **só valem para um usuário de banco que não seja superusuário**. O compose cria o usuário do Postgres como superusuário, então, até este passo, o app ignora as travas. Por isso o painel do sistema **recusa criar o segundo lojista ou a segunda loja** enquanto o isolamento não estiver ativo.
@@ -244,7 +269,7 @@ O que é criado, tudo fictício (nomes inventados, CNPJs de faixa fictícia, e-m
   - o **titular** (o e-mail que você informou): vê as duas lojas, o seletor "Todas as lojas" e o quadro "Por loja" no painel;
   - o **gerente da Shopping** (`seu-email+gerente-shopping@dominio`): administrador, mas só da Shopping, para mostrar a diferença para o lojista;
   - um **caixa por loja** (`+caixa-centro` e `+caixa-shopping`): entram direto no PDV.
-- **31 produtos** em 5 categorias (Magic, Pokémon, Yu-Gi-Oh!, acessórios, bebidas e snacks), todos com **código de barras EAN-13 válido**, prontos para as **etiquetas**, com caixas e boosters para mostrar a abertura de box.
+- **Produtos de cada loja** (31 na Centro e uma seleção menor na Shopping, que não trabalha com cartas avulsas), em 5 categorias (Magic, Pokémon, Yu-Gi-Oh!, acessórios, bebidas e snacks), todos com **código de barras EAN-13 válido**, prontos para as **etiquetas**, com caixas e boosters para mostrar a abertura de box.
 - **Notas fiscais de compra**, três por loja: uma com entrada completa no estoque, uma com **falta registrada** na conferência e uma **ainda por dar entrada**, para mostrar o fluxo de recebimento.
 - **Financeiro:** 10 duplicatas a pagar das notas (2 já pagas, algumas vencidas e outras a vencer) e **recebíveis** das vendas no fiado.
 - **150 vendas em quatro semanas**, feitas pelo mesmo serviço do PDV, com PIX, dinheiro, cartão, crédito do jogador, pagamento dividido e fiado, 4 vendas canceladas e um caixa aberto por loja. Os gráficos do painel já aparecem preenchidos.

@@ -25,9 +25,15 @@ export async function createPurchaseOrder(input: unknown, userId: string) {
   return result.rows[0].id;
 }
 
+/** A trava do banco (produto de uma loja em pedido de outra) vira uma mensagem que o usuário entende. */
+const wrongStore=(error:unknown):never=>{
+  if(typeof error==="object"&&error&&"code" in error&&error.code==="23514")throw new AppError("Este produto é de outra loja: o pedido só aceita produtos da loja dele.",409);
+  throw error;
+};
+
 export async function addPurchaseItem(input:unknown,userId:string){
   const parsed=z.object({orderId:z.string().uuid(),productId:z.string().uuid(),quantity:z.number().int().positive(),unitCostCents:z.number().int().min(0)}).parse(input);
-  const result=await pool.query("INSERT INTO purchase_order_items(order_id,product_id,ordered_quantity,unit_cost_cents) SELECT $1,$2,$3,$4 WHERE EXISTS(SELECT 1 FROM purchase_orders WHERE id=$1 AND status='DRAFT') ON CONFLICT(order_id,product_id) DO UPDATE SET ordered_quantity=excluded.ordered_quantity,unit_cost_cents=excluded.unit_cost_cents,updated_at=now() RETURNING id",[parsed.orderId,parsed.productId,parsed.quantity,parsed.unitCostCents]);
+  const result=await pool.query("INSERT INTO purchase_order_items(order_id,product_id,ordered_quantity,unit_cost_cents) SELECT $1,$2,$3,$4 WHERE EXISTS(SELECT 1 FROM purchase_orders WHERE id=$1 AND status='DRAFT') ON CONFLICT(order_id,product_id) DO UPDATE SET ordered_quantity=excluded.ordered_quantity,unit_cost_cents=excluded.unit_cost_cents,updated_at=now() RETURNING id",[parsed.orderId,parsed.productId,parsed.quantity,parsed.unitCostCents]).catch(wrongStore);
   if(!result.rowCount)throw new AppError("Pedido não está em rascunho.",409);
   await pool.query("INSERT INTO audit_logs(user_id,action,entity_type,entity_id,after) VALUES ($1,'PURCHASE_ITEM_UPSERT','purchase_order',$2,$3)",[userId,parsed.orderId,JSON.stringify(parsed)]);
 }

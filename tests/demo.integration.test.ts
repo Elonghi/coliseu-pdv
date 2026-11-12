@@ -66,11 +66,21 @@ suite("cliente de demonstração, criado pelo sistema com as travas do banco val
     expect(await names("apresentacao+caixa-shopping@coliseon.test")).toEqual(["Loja Shopping"]);
   });
 
-  it("catálogo pronto para as etiquetas: produtos ativos com EAN-13 válido, em cinco categorias", async () => {
-    const products = (await owner.query<{ sku: string; barcode: string; active: boolean }>("SELECT sku,barcode,active FROM products WHERE account_id=$1", [demo.accountId])).rows;
-    expect(products).toHaveLength(demoCatalog.length);
+  it("cada loja com o seu catálogo, pronto para as etiquetas: produtos ativos com EAN-13 válido, em cinco categorias", async () => {
+    const products = (await owner.query<{ sku: string; barcode: string; active: boolean; store: string | null }>("SELECT p.sku,p.barcode,p.active,s.name store FROM products p LEFT JOIN stores s ON s.id=p.store_id WHERE p.account_id=$1", [demo.accountId])).rows;
+    const centro = products.filter((product) => product.store === "Loja Centro");
+    const shopping = products.filter((product) => product.store === "Loja Shopping");
+    expect(centro).toHaveLength(demoCatalog.length);
+    expect(shopping.length).toBeGreaterThan(0);
+    expect(shopping.length).toBeLessThan(demoCatalog.length);
+    expect(products).toHaveLength(centro.length + shopping.length); // nenhum produto sem loja
     for (const product of products) { expect(product.active).toBe(true); expect(ean13Digit(product.barcode.slice(0, 12))).toBe(product.barcode[12]); }
-    expect(products.map((product) => product.barcode)).toContain(demoEan(1));
+    expect(centro.map((product) => product.barcode)).toContain(demoEan(1));
+    // o mesmo produto existe nas duas lojas, como dois cadastros (SKU repetido entre lojas é permitido)
+    expect(centro.filter((product) => shopping.some((other) => other.sku === product.sku)).length).toBe(shopping.length);
+    // o vínculo com o fornecedor e quem usa o produto são da loja dele
+    expect(await total("SELECT m.id FROM supplier_product_mappings m JOIN products p ON p.id=m.product_id WHERE m.store_id IS DISTINCT FROM p.store_id AND m.account_id=$1", [demo.accountId])).toBe(0);
+    expect(await total("SELECT ps.product_id FROM product_stock ps JOIN products p ON p.id=ps.product_id WHERE ps.store_id IS DISTINCT FROM p.store_id AND p.account_id=$1", [demo.accountId])).toBe(0);
     expect(await total("SELECT id FROM categories WHERE account_id=$1", [demo.accountId])).toBe(5);
     expect(await total("SELECT id FROM players WHERE account_id=$1", [demo.accountId])).toBe(8);
     expect(await total("SELECT id FROM suppliers WHERE account_id=$1", [demo.accountId])).toBe(2);
@@ -155,10 +165,18 @@ suite("cliente de demonstração, criado pelo sistema com as travas do banco val
     expect(await total("SELECT DISTINCT company_cnpj FROM sefaz_sync_states")).toBe(4);
     const { pool } = await import("@/db");
     const { runWithScope } = await import("@/db/scope");
-    const stores = (await owner.query<{ id: string }>("SELECT id FROM stores WHERE account_id=$1", [second.accountId])).rows.map((row) => row.id);
+    const stores = (await owner.query<{ id: string }>("SELECT id FROM stores WHERE account_id=$1 ORDER BY name", [second.accountId])).rows.map((row) => row.id);
     await runWithScope({ accountId: second.accountId, storeId: null, storeIds: stores }, async () => {
       expect((await pool.query("SELECT count(*)::int n FROM sales")).rows[0].n).toBe(second.counts.sales);
-      expect((await pool.query("SELECT count(*)::int n FROM products")).rows[0].n).toBe(demoCatalog.length);
+      expect((await pool.query("SELECT count(*)::int n FROM products")).rows[0].n).toBe(second.counts.products);
     });
+    // cada loja enxerga só os produtos dela
+    for (const [index, storeId] of stores.entries()) {
+      await runWithScope({ accountId: second.accountId, storeId, storeIds: [storeId] }, async () => {
+        const ownProducts = (await pool.query<{ n: number }>("SELECT count(*)::int n FROM products")).rows[0].n;
+        expect(ownProducts).toBe((await owner.query<{ n: number }>("SELECT count(*)::int n FROM products WHERE store_id=$1", [storeId])).rows[0].n);
+        if (index === 0) expect(ownProducts).toBe(demoCatalog.length);
+      });
+    }
   }, 120_000);
 });

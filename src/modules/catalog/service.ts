@@ -17,7 +17,8 @@ export async function createProduct(input: ProductInput, initialStock: number, u
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    if (initialStock > 0) await requireActiveStore(client);
+    // O produto nasce na loja ativa: sem escolher uma loja (visão de todas as lojas) não há de quem ele seja.
+    await requireActiveStore(client, "cadastrar o produto");
     const result = await client.query<{ id: string }>(`INSERT INTO products (sku,barcode,name,description,image_key,category_id,unit_id,cost_cents,sale_price_cents,max_discount_bps,stock_quantity,minimum_stock,can_split_into_boosters,is_loose_booster,tcg_game,tcg_set_name,tcg_collector_number,tcg_language,tcg_rarity,tcg_condition,active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id`, [input.sku.trim().toUpperCase(), input.barcode?.trim() || null, input.name.trim(), input.description?.trim() || null, imageKey ?? null, input.categoryId, input.unitId, input.costCents, input.salePriceCents, input.maxDiscountBps, initialStock, input.minimumStock, input.canSplitIntoBoosters ?? false, input.isLooseBooster ?? false,input.tcgGame?.trim()||null,input.tcgSetName?.trim()||null,input.tcgCollectorNumber?.trim()||null,input.tcgLanguage?.trim()||null,input.tcgRarity?.trim()||null,input.tcgCondition?.trim()||null, input.active ?? true]);
     const id = result.rows[0].id;
     if (initialStock > 0) await client.query("INSERT INTO stock_movements (product_id,type,quantity_delta,previous_quantity,new_quantity,user_id,notes) VALUES ($1,'INITIAL',$2,0,$2,$3,'Estoque inicial')", [id, initialStock, userId]);
