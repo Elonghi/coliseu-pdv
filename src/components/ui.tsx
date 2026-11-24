@@ -63,13 +63,18 @@ export function EmptyState({ icon: Icon = Inbox, title, description, action }: {
   </div>;
 }
 
-export type TabItem = { href: string; label: string; active: boolean; count?: number; warn?: boolean };
+/** `reload`: abre com carga completa da página (necessário quando a tela depende de um cabeçalho próprio, como a permissão de localização). */
+export type TabItem = { href: string; label: string; active: boolean; count?: number; warn?: boolean; reload?: boolean };
 
 export function Tabs({ items, label }: { items: TabItem[]; label: string }) {
   return <nav className="tabs" aria-label={label}>
-    {items.map((item) => <Link key={item.href} className={`tab ${item.active ? "is-active" : ""}`} href={item.href} aria-current={item.active ? "page" : undefined}>
-      {item.label}{item.count !== undefined && <span className={`tab-count ${item.warn ? "is-warn" : ""}`}>{item.count}</span>}
-    </Link>)}
+    {items.map((item) => {
+      const className = `tab ${item.active ? "is-active" : ""}`;
+      const content = <>{item.label}{item.count !== undefined && <span className={`tab-count ${item.warn ? "is-warn" : ""}`}>{item.count}</span>}</>;
+      // carga completa de propósito: precisa recarregar a página para valer o cabeçalho da tela
+      return item.reload ? <a key={item.href} className={className} href={item.href} aria-current={item.active ? "page" : undefined}>{content}</a>
+        : <Link key={item.href} className={className} href={item.href} aria-current={item.active ? "page" : undefined}>{content}</Link>;
+    })}
   </nav>;
 }
 

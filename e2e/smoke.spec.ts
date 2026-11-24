@@ -711,6 +711,25 @@ test.describe.serial("fluxos essenciais", () => {
     await expect(audit.getByText("Fora do raio da loja").first()).toBeVisible();
     await expect(audit.getByText("Conta cobrada (comanda fechada)").first()).toBeVisible();
   });
+  test("comandas: a configuração consegue pedir a localização mesmo chegando pelas abas do painel", async ({ browser, baseURL }) => {
+    test.skip(!process.env.DATABASE_URL, "precisa do banco para pular as boas-vindas do acesso guiado");
+    // A permissão de localização vale pelo cabeçalho da página carregada por inteiro: a aba Configurações tem de recarregar a página.
+    const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
+    const adminId = (await db.query<{ id: string }>("SELECT id FROM users WHERE lower(email)=lower($1)", [adminEmail])).rows[0].id;
+    await db.end();
+    const context = await browser.newContext({ permissions: ["geolocation"], geolocation: { latitude: -23.55052, longitude: -46.633308, accuracy: 20 } });
+    await context.addCookies([{ name: `coliseu_guide_${adminId.replace(/-/g, "").slice(0, 16)}`, value: "dismissed", url: baseURL! }]);
+    const page = await context.newPage();
+    await signIn(page, adminEmail, seedPassword);
+    await page.goto("/admin/comandas");
+    await page.getByRole("link", { name: "Configurações", exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/comandas\/configuracoes$/);
+    await page.getByRole("button", { name: "Usar minha localização atual" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Localização preenchida" })).toBeVisible();
+    await expect(page.getByLabel("Latitude")).toHaveValue(/^-23\.55/);
+    await context.close();
+  });
   test("o administrador do sistema criado pelo script, sem lojista, entra direto no painel do sistema", async ({ page }) => {
     test.skip(!process.env.DATABASE_URL, "precisa acessar o banco para criar o usuário pelo script");
     const email = `sistema-${Date.now()}@e2e.test`;

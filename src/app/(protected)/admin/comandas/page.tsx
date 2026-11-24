@@ -18,6 +18,9 @@ export const dynamic = "force-dynamic";
 export default async function ComandasPage() {
   const user = await requirePermission(permissions.CASH_MANAGE);
   const isAdmin = user.role === "ADMIN";
+  // Carga completa de propósito: a configuração só pode pedir a localização se a página vier com o cabeçalho que a libera.
+  // eslint-disable-next-line @next/next/no-html-link-for-pages
+  const settingsLink = <a className="link-row" href="/admin/comandas/configuracoes">Ligar em Configurações</a>;
   const header = <PageHeader eyebrow="Operação" title="Comandas" description="Abra a comanda para um cliente, acompanhe os pedidos que chegam pelo celular e cobre a conta no PDV."/>;
   if (user.consolidated) {
     return <div className="section-gap">{header}
@@ -34,7 +37,7 @@ export default async function ComandasPage() {
   return <div className="section-gap">
     {header}
     <ComandaTabs active="board" isAdmin={isAdmin}/>
-    {!settings.enabled && <p className="notice-warn">Os pedidos pelo celular estão <b>desligados</b> nesta loja: o cliente que escanear o QR vê um aviso. {isAdmin ? <Link className="link-row" href="/admin/comandas/configuracoes">Ligar em Configurações</Link> : "Peça ao administrador para ligar."}</p>}
+    {!settings.enabled && <p className="notice-warn">Os pedidos pelo celular estão <b>desligados</b> nesta loja: o cliente que escanear o QR vê um aviso. {isAdmin ? settingsLink : "Peça ao administrador para ligar."}</p>}
     <NewOrdersWatcher initialIds={fresh.map((order) => order.id)}/>
 
     <section className="stat-grid" aria-label="Resumo das comandas">

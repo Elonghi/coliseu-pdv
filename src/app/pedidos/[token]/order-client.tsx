@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Minus, Plus, ShieldCheck } from "lucide-react";
+import { GEOLOCATION_BLOCKED_BY_SERVER, geolocationAllowedByPolicy } from "@/lib/geolocation-policy";
 import { formatMoney } from "@/lib/money";
 
 type MenuItem = { id: string; name: string; priceCents: number; category: string; maxQuantity: number };
@@ -9,13 +10,15 @@ type AccountOrder = { id: string; status: "NEW" | "DELIVERED" | "CANCELED"; crea
 type Account = { orders: AccountOrder[]; totalCents: number };
 type Snapshot = { playerFirstName: string; menu: MenuItem[]; account: Account };
 type Phase = "intro" | "working" | "blocked" | "ready" | "closed";
-type Place = { denied: true } | { latitude: number; longitude: number; accuracyMeters: number } | null;
+type Place = { denied: true } | { latitude: number; longitude: number; accuracyMeters: number } | null | "policy";
 
 const statusText = { NEW: "Recebido", DELIVERED: "Entregue", CANCELED: "Cancelado" } as const;
 
 /** Pede a posição ao aparelho. Qualquer falha (recusa, sem GPS, tempo esgotado) vira "denied": o servidor explica o que fazer. */
 function readPlace(): Promise<Place> {
   return new Promise((resolve) => {
+    // Se o próprio servidor ou um proxy bloqueia a localização nesta página, o navegador nem chega a perguntar: avisa o motivo real.
+    if (geolocationAllowedByPolicy() === false) { resolve("policy"); return; }
     if (!navigator.geolocation) { resolve({ denied: true }); return; }
     navigator.geolocation.getCurrentPosition(
       (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracyMeters: position.coords.accuracy }),
@@ -61,6 +64,7 @@ export function OrderClient({ token, storeName, number, requireLocation }: { tok
     setPhase("working"); setMessage("");
     try {
       const location = requireLocation ? await readPlace() : null;
+      if (location === "policy") throw Object.assign(new Error(GEOLOCATION_BLOCKED_BY_SERVER), { code: "POLICY" });
       const json = await call("entrar", { location, device: deviceInfo() });
       setData({ playerFirstName: json.playerFirstName, menu: json.menu, account: json.account });
       setPhase("ready");
@@ -95,6 +99,7 @@ export function OrderClient({ token, storeName, number, requireLocation }: { tok
       const attempt = requestId ?? crypto.randomUUID();
       setRequestId(attempt);
       const location = requireLocation ? await readPlace() : null;
+      if (location === "policy") throw Object.assign(new Error(GEOLOCATION_BLOCKED_BY_SERVER), { code: "POLICY" });
       const json = await call("pedido", { requestId: attempt, items: lines.map((line) => ({ productId: line.item.id, quantity: line.quantity })), note: note.trim() || undefined, location, device: deviceInfo() });
       setData((current) => current && { ...current, menu: json.menu, account: json.account });
       setCart({}); setNote(""); setReview(false); setRequestId(null); setSent(true); setTab("account");

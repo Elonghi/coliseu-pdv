@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LocateFixed } from "lucide-react";
 import { ActionForm } from "@/components/action-form";
+import { GEOLOCATION_BLOCKED_BY_SERVER, geolocationAllowedByPolicy } from "@/lib/geolocation-policy";
 import { saveSettingsAction } from "@/modules/comandas/actions";
 
 type Settings = { enabled: boolean; requireLocation: boolean; latitude: number | null; longitude: number | null; radiusMeters: number };
@@ -12,7 +13,18 @@ export function SettingsForm({ settings }: { settings: Settings }) {
   const [longitude, setLongitude] = useState(settings.longitude?.toString() ?? "");
   const [status, setStatus] = useState("");
 
+  // Chegou por navegação interna e o navegador manteve a política da tela anterior (sem localização): recarrega uma vez para valer a desta tela.
+  useEffect(() => {
+    const key = "coliseu:geo-reload";
+    try {
+      if (geolocationAllowedByPolicy() !== false) { window.sessionStorage.removeItem(key); return; }
+      if (window.sessionStorage.getItem(key) !== "1") { window.sessionStorage.setItem(key, "1"); window.location.reload(); return; }
+    } catch { /* sem armazenamento local: só avisa */ }
+    queueMicrotask(() => setStatus(GEOLOCATION_BLOCKED_BY_SERVER));
+  }, []);
+
   const locate = () => {
+    if (geolocationAllowedByPolicy() === false) { setStatus(GEOLOCATION_BLOCKED_BY_SERVER); return; }
     if (!navigator.geolocation) { setStatus("Este navegador não informa a localização."); return; }
     setStatus("Buscando a localização…");
     navigator.geolocation.getCurrentPosition(

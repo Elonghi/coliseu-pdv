@@ -2,7 +2,7 @@ import { Tabs } from "@/components/ui";
 
 export type ComandaTab = "board" | "cadastro" | "qrcodes" | "cardapio" | "configuracoes" | "auditoria";
 
-/* Abas da área de comandas. O balcão vê só a primeira; o administrador vê o cadastro, os QR Codes, o cardápio, as configurações e a auditoria. */
+/* Abas da área de comandas. A de Configurações abre com carga completa da página: só assim o navegador aceita pedir a localização (ver lib/geolocation-policy.ts). O balcão vê só a primeira; o administrador vê o cadastro, os QR Codes, o cardápio, as configurações e a auditoria. */
 export function ComandaTabs({ active, isAdmin }: { active: ComandaTab; isAdmin: boolean }) {
   const items = [
     { key: "board", href: "/admin/comandas", label: "Comandas" },
@@ -15,5 +15,5 @@ export function ComandaTabs({ active, isAdmin }: { active: ComandaTab; isAdmin: 
     ] : []),
   ];
   if (items.length === 1) return null;
-  return <Tabs label="Áreas das comandas" items={items.map((item) => ({ href: item.href, label: item.label, active: item.key === active }))}/>;
+  return <Tabs label="Áreas das comandas" items={items.map((item) => ({ href: item.href, label: item.label, active: item.key === active, reload: item.key === "configuracoes" }))}/>;
 }
