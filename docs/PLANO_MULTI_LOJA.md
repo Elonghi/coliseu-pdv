@@ -234,6 +234,7 @@ Assumido por padrão, ajustável:
 | Usuário de administrador do sistema criado por script (`platform-admin.mjs --create`) | Pronto (runbook, seção 12.1) |
 | Cliente de demonstração (duas lojas, equipe, catálogo, notas, financeiro e vendas) pelo painel ou por comando | Pronto (runbook, seção 12.2) |
 | Produtos por loja: cada loja com o seu catálogo, SKU e código de barras únicos por loja, travas entre lojas | Pronto (0019; runbook, seção 8). Produtos que várias lojas já usavam continuam compartilhados |
+| Comandas: pedidos pelo QR Code, conta no PDV, auditoria com IP, aparelho e localização (90 dias) | Pronto (0020; runbook, seção 14). Tudo por loja |
 
 Ainda não implementado, de propósito:
 

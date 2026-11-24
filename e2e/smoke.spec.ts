@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import pg from "pg";
 import { encryptTotpSecret, generateTotpCode, generateTotpSecret } from "../src/modules/auth/totp";
+import { signComandaToken } from "../src/modules/comandas/token";
 import { expect, test, type Page } from "@playwright/test";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@coliseu.local";
@@ -37,7 +38,11 @@ async function login(page: Page, email: string, password: string) {
   // o guia confere o andamento antes de decidir se dá as boas-vindas ("checking"); sem guia montado, o atributo nem existe
   await page.locator("html[data-guide]:not([data-guide=checking])").waitFor({ state: "attached", timeout: 4000 }).catch(() => undefined);
   const later = page.getByRole("button", { name: "Agora não" });
-  if (await later.isVisible()) await expect(async () => { if (await later.isVisible()) await later.click(); await expect(later).toBeHidden({ timeout: 2000 }); }).toPass();
+  if (await later.isVisible()) {
+    await expect(async () => { if (await later.isVisible()) await later.click(); await expect(later).toBeHidden({ timeout: 2000 }); }).toPass();
+    // "Agora não" grava um cookie por uma ação do servidor: navegar antes disso faria as boas-vindas voltarem na página seguinte
+    await expect.poll(async () => (await page.context().cookies()).some((cookie) => cookie.name.startsWith("coliseu_guide_"))).toBe(true);
+  }
 }
 
 test.describe.serial("fluxos essenciais", () => {
@@ -590,6 +595,121 @@ test.describe.serial("fluxos essenciais", () => {
       await db.query("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE lower(email)=lower($1))", [operatorEmail]);
       await db.end();
     }
+  });
+  test("comandas: o cliente escaneia o QR, pede pelo celular dentro da loja, o balcão cobra no PDV e completa o cadastro", async ({ page, browser, baseURL }) => {
+    test.setTimeout(240_000);
+    test.skip(!process.env.COMANDA_LINK_SECRET, "precisa do mesmo COMANDA_LINK_SECRET do servidor para montar o link do QR");
+    const store = { latitude: -23.55052, longitude: -46.633308 };
+    const product = "Refrigerante Coca-Cola 2L";
+    await login(page, adminEmail, seedPassword);
+
+    // 1. o administrador liga as comandas, define onde a loja fica, cadastra 3 comandas e monta o cardápio do celular
+    await page.goto("/admin/comandas/configuracoes");
+    await page.getByLabel("Latitude").fill(String(store.latitude));
+    await page.getByLabel("Longitude").fill(String(store.longitude));
+    await page.getByLabel(/Raio permitido/).fill("150");
+    await page.getByLabel(/Receber pedidos pelo celular/).check();
+    await page.getByRole("button", { name: "Salvar configurações" }).click();
+    await expect(page.getByText("Configurações salvas.")).toBeVisible();
+
+    // cada execução cadastra uma comanda de número novo, para o teste não depender do que sobrou de execuções anteriores
+    const number = 1000 + Math.floor(Math.random() * 8000);
+    await page.goto("/admin/comandas/cadastro");
+    await page.getByLabel("Da comanda número").fill(String(number));
+    await page.getByRole("button", { name: "Cadastrar", exact: true }).click();
+    await expect(page.getByText("1 comanda(s) cadastrada(s).")).toBeVisible();
+
+    await page.goto("/admin/comandas/cardapio");
+    await page.getByRole("checkbox", { name: new RegExp(product) }).check();
+    await page.getByRole("button", { name: "Salvar cardápio" }).click();
+    await expect(page.getByText(/Cardápio salvo/)).toBeVisible();
+
+    await page.goto("/admin/comandas/qrcodes");
+    await expect(page.locator(".qr-card").filter({ hasText: String(number) }).locator("svg")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Imprimir QR Codes" })).toBeVisible();
+
+    // 2. o balcão abre a comanda para um cliente sem cadastro (cadastro provisório)
+    await page.goto("/admin/comandas");
+    const card = page.locator(".comanda-card.is-free").filter({ has: page.locator(".comanda-number", { hasText: new RegExp(`^${number}$`) }) });
+    await card.getByRole("button", { name: "Abrir" }).click();
+    await page.getByRole("tab", { name: "Cadastro provisório" }).click();
+    await page.getByLabel("Nome do cliente").fill("Cliente E2E");
+    await page.getByRole("button", { name: "Abrir comanda" }).click();
+    await expect(page).toHaveURL(/\/admin\/comandas\/[0-9a-f-]{36}$/);
+    const comandaId = page.url().split("/").pop()!;
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Comanda ${number}`);
+    const link = `${baseURL}/pedidos/${signComandaToken(comandaId, 1)}`;
+    await expect(page.getByText("Cadastro provisório").first()).toBeVisible();
+
+    // 3. o cliente (celular) escaneia o QR. Sem permitir a localização, ou longe da loja, o pedido é barrado
+    const mobile = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } as const;
+    const denied = await browser.newContext({ ...mobile, permissions: [] });
+    const deniedPage = await denied.newPage();
+    await deniedPage.goto(link);
+    await expect(deniedPage.getByRole("heading", { name: `Comanda ${number}` })).toBeVisible();
+    await deniedPage.getByRole("button", { name: "Permitir localização e continuar" }).click();
+    await expect(deniedPage.locator(".cmd-alert")).toContainText(/permitir a localiza/i);
+    await denied.close();
+
+    const far = await browser.newContext({ ...mobile, permissions: ["geolocation"], geolocation: { latitude: -23.4, longitude: -46.8 } });
+    const farPage = await far.newPage();
+    await farPage.goto(link);
+    await farPage.getByRole("button", { name: "Permitir localização e continuar" }).click();
+    await expect(farPage.locator(".cmd-alert")).toContainText(/longe da loja/i);
+    await far.close();
+
+    const customerContext = await browser.newContext({ ...mobile, permissions: ["geolocation"], geolocation: { ...store, accuracy: 15 } });
+    const customer = await customerContext.newPage();
+    await customer.goto(link);
+    await customer.getByRole("button", { name: "Permitir localização e continuar" }).click();
+    await expect(customer.getByText(/Olá,/)).toContainText("Cliente");
+    const row = customer.locator("article.cmd-item", { hasText: product });
+    await expect(row).toBeVisible();
+    await expect(customer.getByText("Carta avulsa")).toHaveCount(0); // só o que está no cardápio
+    await row.getByRole("button", { name: `Adicionar ${product}` }).click();
+    await row.getByRole("button", { name: `Adicionar ${product}` }).click();
+    await customer.getByRole("button", { name: /Revisar pedido/ }).click();
+    await customer.getByRole("button", { name: "Enviar pedido" }).click();
+    await expect(customer.locator(".cmd-ok")).toContainText("Pedido enviado");
+    await expect(customer.getByText("2× " + product)).toBeVisible();
+    await expect(customer.locator(".cmd-total strong")).toHaveText(/18,00/);
+
+    // 4. o balcão vê o pedido, marca como entregue e cobra a conta no PDV
+    await page.goto(`/admin/comandas/${comandaId}`);
+    const orders = page.getByRole("region", { name: "Pedidos" });
+    await expect(orders.getByText("Pedido do cliente")).toBeVisible();
+    await expect(orders.getByText("2× " + product)).toBeVisible();
+    await page.getByRole("button", { name: "Marcar entregue" }).click();
+    await expect(page.getByText("Pedido marcado como entregue.").or(page.locator(".order-card.is-delivered"))).toBeVisible();
+    await page.getByRole("link", { name: "Cobrar no PDV" }).click();
+    await expect(page).toHaveURL(/\/pdv\?comanda=/);
+    await expect(page.getByText(`Cobrando a comanda ${number}`)).toBeVisible();
+    await expect(page.getByPlaceholder("Nome, SKU ou código de barras")).toHaveCount(0); // o carrinho é a conta, só leitura
+    await page.getByRole("button", { name: /Finalizar venda/ }).click();
+    const sale = page.waitForResponse((response) => response.url().endsWith("/api/sales"));
+    await page.getByRole("button", { name: "Confirmar venda" }).click();
+    expect((await sale).status()).toBe(201);
+    await expect(page.getByText("Venda concluída")).toBeVisible();
+
+    // 5. ao fechar, o sistema oferece completar o cadastro provisório
+    await expect(page.getByText("Complete o cadastro de Cliente E2E")).toBeVisible();
+    await page.getByLabel("Telefone").fill("11988887777");
+    await page.getByRole("button", { name: "Salvar cadastro completo" }).click();
+    await expect(page.getByText("Cadastro completo.")).toBeVisible();
+    await page.locator("section", { hasText: "Venda concluída" }).getByRole("link", { name: "Voltar às comandas" }).click();
+    await expect(page.locator(".comanda-card.is-free").filter({ has: page.locator(".comanda-number", { hasText: new RegExp(`^${number}$`) }) })).toBeVisible();
+
+    // 6. com a comanda fechada, o cliente não consegue mais pedir; a auditoria tem tudo
+    await customer.reload();
+    await expect(customer.getByRole("heading", { name: `Comanda ${number} fechada` })).toBeVisible();
+    await customerContext.close();
+    await page.goto("/admin/comandas/auditoria");
+    const audit = page.locator("table");
+    await expect(audit.getByText("Pedido do cliente").first()).toBeVisible();
+    await expect(audit.getByText("Acesso barrado").first()).toBeVisible();
+    await expect(audit.getByText("Localização recusada").first()).toBeVisible();
+    await expect(audit.getByText("Fora do raio da loja").first()).toBeVisible();
+    await expect(audit.getByText("Conta cobrada (comanda fechada)").first()).toBeVisible();
   });
   test("o administrador do sistema criado pelo script, sem lojista, entra direto no painel do sistema", async ({ page }) => {
     test.skip(!process.env.DATABASE_URL, "precisa acessar o banco para criar o usuário pelo script");

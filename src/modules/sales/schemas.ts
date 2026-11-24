@@ -6,6 +6,8 @@ export const checkoutSchema = z.object({
     methodCode: z.string().min(1).max(30), amountAppliedCents: z.number().int().positive(), amountReceivedCents: z.number().int().positive().optional(),
     playerId: z.string().uuid().optional(), dueDate: z.string().date().optional(),
   })).min(1).max(6),
+  /** Venda que cobra uma comanda: o carrinho tem de ser exatamente a conta dela, e a comanda é encerrada junto com a venda. */
+  comandaSessionId: z.string().uuid().optional(),
 });
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export const cancelSaleSchema = z.object({ reason: z.string().trim().min(5).max(500) });

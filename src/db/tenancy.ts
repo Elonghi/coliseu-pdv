@@ -50,6 +50,15 @@ export const tenancy = {
   fiscal_invoices: "STORE",
   fiscal_invoice_items: "STORE",
   fiscal_invoice_events: "STORE",
+  // Comandas (cliente pede pelo celular; cobrança no PDV).
+  comanda_settings: "STORE",
+  comandas: "STORE",
+  comanda_sessions: "STORE",
+  comanda_devices: "STORE",
+  comanda_orders: "STORE",
+  comanda_order_items: "STORE",
+  comanda_events: "STORE",
+  rate_limits: "GLOBAL",
   // Integração SAE NFC-e (migração 0014, em andamento).
   sae_nfce_sync_states: "STORE",
   sae_nfce_keys: "STORE",

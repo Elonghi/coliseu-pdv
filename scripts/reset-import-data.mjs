@@ -29,10 +29,12 @@ let productImageKeys = [];
 try {
   await client.query("BEGIN");
   await client.query("SET LOCAL lock_timeout = '30s'");
+  // Comandas (migration 0020) referenciam produtos, jogadores e vendas: o reset precisa apagá-las antes. A migration pode ainda não ter rodado.
+  const hasComandas = (await client.query("SELECT to_regclass('public.comanda_sessions') IS NOT NULL AS ok")).rows[0].ok;
   await client.query(`LOCK TABLE players,products,product_splits,supplier_product_mappings,sales,sale_items,payments,
     cash_movements,cash_sessions,inventory_count_items,inventory_counts,purchase_order_items,purchase_orders,
     player_credit_movements,stock_movements,bank_transactions,bank_imports,financial_settlements,financial_installments,financial_accounts,
-    fiscal_invoice_events,fiscal_invoice_items,fiscal_invoices,fiscal_dfe_documents,fiscal_import_batches
+    fiscal_invoice_events,fiscal_invoice_items,fiscal_invoices,fiscal_dfe_documents,fiscal_import_batches${hasComandas ? ",comanda_events,comanda_order_items,comanda_orders,comanda_devices,comanda_sessions" : ""}
     IN ACCESS EXCLUSIVE MODE`);
 
   const before = (await client.query(`SELECT
@@ -55,6 +57,15 @@ try {
   await client.query("DELETE FROM financial_installments");
   await client.query("DELETE FROM financial_accounts");
   await client.query("UPDATE players SET credit_balance_cents=0,updated_at=now() WHERE credit_balance_cents<>0");
+  if (hasComandas) {
+    // Pedidos, aparelhos e auditoria das comandas saem junto (referenciam sessões, produtos e vendas). As comandas cadastradas e as configurações ficam.
+    await client.query("DELETE FROM comanda_events");
+    await client.query("DELETE FROM comanda_order_items");
+    await client.query("DELETE FROM comanda_orders");
+    await client.query("DELETE FROM comanda_devices");
+    await client.query("UPDATE sales SET comanda_session_id=NULL WHERE comanda_session_id IS NOT NULL");
+    await client.query("DELETE FROM comanda_sessions");
+  }
   await client.query("DELETE FROM payments");
   await client.query("DELETE FROM stock_movements");
   await client.query("DELETE FROM product_splits");

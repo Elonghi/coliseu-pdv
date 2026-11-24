@@ -66,6 +66,10 @@ try {
   const tables = ["players", "products", "product_splits", "sales", "sale_items", "payments", "cash_movements", "cash_sessions",
     "inventory_count_items", "inventory_counts", "purchase_order_items", "purchase_orders", "player_credit_movements", "stock_movements", "supplier_product_mappings",
     "bank_transactions", "financial_settlements", "financial_installments", "financial_accounts", "fiscal_invoices", "fiscal_invoice_items", "audit_logs"];
+  // Comandas (migration 0020) referenciam produtos, jogadores e vendas: entram no reset quando a migration já rodou.
+  const comandaTables = ["comanda_events", "comanda_order_items", "comanda_orders", "comanda_devices", "comanda_sessions"];
+  const hasComandas = await exists("comanda_sessions");
+  if (hasComandas) tables.push(...comandaTables);
   const present = [];
   for (const table of tables) if (await exists(table)) present.push(table);
   await client.query(`LOCK TABLE ${present.join(",")} IN ACCESS EXCLUSIVE MODE`);
@@ -97,6 +101,14 @@ try {
   await step("Contas que não vêm de nota fiscal", "DELETE FROM financial_accounts WHERE fiscal_invoice_id IS NULL");
   await step("Duplicatas de notas reabertas", "UPDATE financial_installments SET settled_cents=0,status='OPEN',updated_at=now() WHERE status<>'CANCELED' AND (status<>'OPEN' OR settled_cents<>0)");
   await step("Contas de notas reabertas", "UPDATE financial_accounts SET status='OPEN',updated_at=now() WHERE status IN ('PARTIAL','SETTLED')");
+  if (hasComandas) {
+    await step("Auditoria das comandas", "DELETE FROM comanda_events");
+    await step("Itens de pedidos das comandas", "DELETE FROM comanda_order_items");
+    await step("Pedidos das comandas", "DELETE FROM comanda_orders");
+    await step("Aparelhos das comandas", "DELETE FROM comanda_devices");
+    await step("Vendas desligadas das comandas", "UPDATE sales SET comanda_session_id=NULL WHERE comanda_session_id IS NOT NULL");
+    await step("Aberturas de comanda", "DELETE FROM comanda_sessions");
+  }
   await step("Pagamentos de vendas", "DELETE FROM payments");
   await step("Movimentações de estoque", "DELETE FROM stock_movements");
   await step("Aberturas de box", "DELETE FROM product_splits");

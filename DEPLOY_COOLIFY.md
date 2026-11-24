@@ -22,6 +22,8 @@ Cadastre antes do primeiro deploy:
 - `SEED_ADMIN_PASSWORD` e `SEED_OPERATOR_PASSWORD`, ambas com pelo menos 12 caracteres.
 - `SESSION_TTL_HOURS=12`, ou o tempo de sessão desejado.
 - `TOTP_ENCRYPTION_KEY` com uma chave longa e aleatória; mantenha o mesmo valor em todos os redeploys para não invalidar os segredos 2FA.
+- `COMANDA_LINK_SECRET` com outra chave longa e aleatória: assina os links dos QR Codes das comandas. Mantenha o mesmo valor depois de imprimir os QR Codes (trocar invalida todos). Sem ela vale a `TOTP_ENCRYPTION_KEY`, mas aí trocar a chave do 2FA também invalidaria os QR impressos.
+- `TRUSTED_PROXY_HOPS=1` (Coolify/Traefik): quantos proxies de confiança ficam na frente do app. Define qual IP a auditoria das comandas grava; com um serviço como o Cloudflare na frente, use 2. Os QR Codes e a localização do cliente exigem HTTPS.
 - `HEALTH_MIN_STORAGE_FREE_PERCENT=10` e `BACKUP_RETENTION_DAYS=14`, ou os limites operacionais desejados.
 
 Para habilitar a distribuição de notas fiscais, cadastre como segredos:

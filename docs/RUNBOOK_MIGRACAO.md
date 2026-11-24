@@ -291,3 +291,43 @@ Como funciona: um balão aponta o elemento certo (o item do menu, o botão, o ca
 - **Sair e voltar:** "Sair do guia" (no balão) pausa; o Dashboard mostra o cartão "Acesso guiado pausado" com o botão para retomar, e a página **Primeiros passos** (menu Visão geral) lista os seis passos e tem o botão de iniciar ou retomar. Nessa página ficam também os passos opcionais depois do básico (equipe, nota fiscal, etiquetas e 2FA).
 - **Sem migration:** nada novo no banco. O andamento vem dos dados que já existem, consultados em `/api/guide`. A decisão de sair ou de já ter visto as boas-vindas fica num cookie do navegador, um por usuário; em outro navegador as boas-vindas aparecem de novo enquanto a loja não estiver pronta.
 - **Apresentações:** o cliente de demonstração (seção 12.2) já nasce com os seis passos feitos, então não mostra o guia. Para mostrar o acesso guiado numa apresentação, crie um **lojista novo** pelo painel do sistema.
+
+## 14. Comandas (pedidos pelo QR Code)
+
+O lojista cadastra comandas físicas (número + QR Code). O cliente escaneia o QR e pede pelo celular; o pedido entra direto na conta daquela comanda, o balcão vê na hora e cobra no PDV. Tudo é **por loja** (cada loja tem as suas comandas, cardápio, localização e auditoria, isolados pelas mesmas travas das demais tabelas de loja).
+
+**Migration 0020 `comandas`** (só acrescenta: tabelas novas, colunas com padrão e índices): `comanda_settings`, `comandas`, `comanda_sessions`, `comanda_devices`, `comanda_orders`, `comanda_order_items`, `comanda_events` (todas de loja, com RLS e gatilhos de mesma loja), `rate_limits` (global), `products.available_on_comanda`, `players.provisional` e `sales.comanda_session_id`. Cria também as funções `comanda_public_lookup` (consulta segura do link), `comanda_anonymize_old` e `comanda_anonymize_ip`.
+
+**Ordem:** deploy do código, backup e `node scripts/migrate.mjs --apply` em seguida (regra geral da seção 3). Entre o deploy e a migration, quem não é administrador do sistema vê o aviso "Atualização do sistema em andamento". O código antigo funciona com o banco novo, então voltar atrás é só redeployar o commit anterior. **Se a migration da impressora térmica (também 0020, em outro branch) entrar antes, esta vira 0021 e a do SAE passa a 0022:** renumere os arquivos e o `_journal.json` na ordem em que forem entrando.
+
+Depois de aplicar, confira no banco:
+
+```sql
+SELECT count(*) FROM pg_policies WHERE tablename LIKE 'comanda%';   -- 7
+SELECT proname FROM pg_proc WHERE proname LIKE 'comanda%' ORDER BY 1; -- comanda_anonymize_ip, comanda_anonymize_old, comanda_public_lookup, comanda_session_player_scope
+```
+
+**Variáveis de ambiente** (Coolify):
+- `APP_URL` (domínio público, **https**, sem barra no fim): é o endereço gravado nos QR Codes. A localização do celular só funciona em HTTPS.
+- `COMANDA_LINK_SECRET`: segredo que assina os links. Sem ele vale `TOTP_ENCRYPTION_KEY`. **Não troque depois de imprimir os QR Codes** (todos deixam de funcionar). Sem nenhum dos dois, a tela de QR Codes avisa e os links não são gerados.
+- `TRUSTED_PROXY_HOPS` (padrão 1, para o Traefik do Coolify): quantos proxies de confiança ficam na frente do app. Decide qual entrada do `X-Forwarded-For` vale como IP do cliente; com Cloudflare na frente, use 2.
+
+**Passo a passo do lojista** (administrador, em Comandas):
+1. **Configurações:** diga onde a loja fica (use "Usar minha localização atual" estando na loja), o raio permitido (padrão 150 m) e ligue os pedidos pelo celular.
+2. **Cadastro:** cadastre as comandas (de 1 a 20, por exemplo).
+3. **Cardápio do celular:** marque o que o cliente pode pedir. Tudo começa **desligado**, para cartas avulsas e produtos fechados não aparecerem por engano.
+4. **QR Codes:** imprima e cole em cada comanda física. "Trocar QR" (em Cadastro) invalida o QR impresso na hora, para comanda perdida ou fotografada.
+
+**Dia a dia (balcão, com a permissão "Operar caixa"):** abre a comanda para um jogador cadastrado ou para um **cadastro provisório** (só o nome); só então o cliente consegue pedir. Os pedidos chegam com aviso e som e entram direto na conta; o balcão marca como entregue, lança itens ou cancela (com motivo). **Cobrar no PDV** abre o carrinho com a conta (somente leitura), a venda encerra a comanda e, se o cadastro era provisório, o sistema oferece completar os dados do cliente.
+
+**Segurança e auditoria:**
+- O link do QR leva uma **assinatura** (não só o número da comanda): quem não tem o segredo não monta o link de outra comanda. Link adulterado e comanda inexistente dão a mesma resposta.
+- O cliente precisa **permitir a localização** e estar dentro do raio, a cada acesso e a cada pedido. Se recusar, ou estiver longe, o pedido é barrado. **A posição vem do celular e pode ser falsificada por quem entende do aparelho**: ela barra o pedido remoto comum, e a auditoria é o que comprova o que aconteceu. Quem tiver uma foto do QR enquanto a comanda estiver aberta consegue pedir, desde que esteja na loja; por isso cada pedido registra IP, aparelho e posição, e o balcão vê tudo na hora.
+- Preço, nome e estoque são sempre conferidos no servidor (o celular só manda o produto e a quantidade). O estoque fica **reservado** pelas comandas abertas e só baixa quando a conta é cobrada.
+- Limites de tentativas por IP e por comanda (guardados no banco).
+- **Auditoria** (Comandas > Auditoria): abertura, acessos (liberados e barrados, com o motivo), pedidos, entregas, cancelamentos, cobrança e alterações de cadastro, com IP, navegador/aparelho e posição. O modelo exato do celular geralmente **não** é informado pelo navegador (o iPhone não informa e o Android quase não); o sistema guarda sistema, navegador, idioma, tela e um identificador do aparelho.
+- **LGPD:** o cliente é avisado na tela antes de permitir a localização. Passados **90 dias** o final do IP e a posição exata são apagados e ficam o aparelho, o horário e o resultado. A anonimização roda sozinha de tempos em tempos a partir das telas do balcão; para forçar: `SELECT comanda_anonymize_old(90);`.
+- O cabeçalho `Permissions-Policy` do sistema continua bloqueando a localização em todas as telas, **exceto** `/pedidos/*` e a página de configurações das comandas.
+
+**Scripts de reset** (`reset-import-data.mjs` e `reset-to-invoice-entry.mjs`) passam a apagar também as aberturas, pedidos, aparelhos e auditoria das comandas (as comandas cadastradas e as configurações ficam).
+

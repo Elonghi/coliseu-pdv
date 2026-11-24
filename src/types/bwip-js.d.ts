@@ -7,7 +7,9 @@ declare module "bwip-js" {
     includetext?: boolean;
     padding?: number;
     backgroundcolor?: string;
+    barcolor?: string;
+    eclevel?: string;
   };
-  const bwipjs: { toBuffer(options: BarcodeOptions): Promise<Buffer> };
+  const bwipjs: { toBuffer(options: BarcodeOptions): Promise<Buffer>; toSVG(options: BarcodeOptions): string };
   export default bwipjs;
 }

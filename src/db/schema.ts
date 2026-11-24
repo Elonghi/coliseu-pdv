@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, date, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, real, text, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["ADMIN", "OPERATOR"]);
 export const saleStatus = pgEnum("sale_status", ["CONFIRMED", "CANCELED"]);
@@ -116,6 +116,8 @@ export const products = pgTable("products", {
   tcgLanguage: varchar("tcg_language", { length: 40 }),
   tcgRarity: varchar("tcg_rarity", { length: 80 }),
   tcgCondition: varchar("tcg_condition", { length: 40 }),
+  /** O cliente pode pedir este produto pelo celular, na comanda. Desligado por padrão: o lojista escolhe o que entra no cardápio. */
+  availableOnComanda: boolean("available_on_comanda").default(false).notNull(),
   active: boolean("active").default(true).notNull(), ...timestamps,
 }, (t) => [uniqueIndex("products_scope_sku_uidx").on(t.accountId, sql`coalesce(${t.storeId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.sku), uniqueIndex("products_scope_barcode_uidx").on(t.accountId, sql`coalesce(${t.storeId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.barcode), index("products_account_idx").on(t.accountId), 
   check("products_money_nonnegative", sql`${t.costCents} >= 0 AND ${t.salePriceCents} >= 0`),
@@ -160,6 +162,8 @@ export const players = pgTable("players", {
   phone: varchar("phone", { length: 40 }),
   notes: text("notes"),
   creditBalanceCents: integer("credit_balance_cents").default(0).notNull(),
+  /** Criado às pressas ao abrir uma comanda (só o nome): o atendente completa o cadastro ao fechar a conta. */
+  provisional: boolean("provisional").default(false).notNull(),
   active: boolean("active").default(true).notNull(),
   ...timestamps,
 }, (t) => [index("players_account_idx").on(t.accountId), index("players_name_idx").on(t.name), index("players_active_idx").on(t.active), index("players_email_idx").on(t.email)]);
@@ -227,8 +231,10 @@ export const sales = pgTable("sales", {
   subtotalCents: integer("subtotal_cents").notNull(), discountCents: integer("discount_cents").notNull(), totalCents: integer("total_cents").notNull(),
   canceledById: uuid("canceled_by_id").references(() => users.id, { onDelete: "restrict" }),
   canceledAt: timestamp("canceled_at", { withTimezone: true }), cancellationReason: text("cancellation_reason"),
+  /** Abertura de comanda que esta venda fechou (uma venda por abertura). */
+  comandaSessionId: uuid("comanda_session_id").references((): AnyPgColumn => comandaSessions.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [index("sales_store_idx").on(t.storeId), index("sales_created_idx").on(t.createdAt), index("sales_operator_idx").on(t.operatorId), index("sales_cash_session_idx").on(t.cashSessionId), index("sales_status_idx").on(t.status)]);
+}, (t) => [uniqueIndex("sales_comanda_session_uidx").on(t.comandaSessionId).where(sql`${t.comandaSessionId} IS NOT NULL`), index("sales_store_idx").on(t.storeId), index("sales_created_idx").on(t.createdAt), index("sales_operator_idx").on(t.operatorId), index("sales_cash_session_idx").on(t.cashSessionId), index("sales_status_idx").on(t.status)]);
 
 export const saleItems = pgTable("sale_items", {
   storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
@@ -570,3 +576,150 @@ export const fiscalInvoiceEvents = pgTable("fiscal_invoice_events", {
   index("fiscal_invoice_events_access_key_idx").on(t.accessKey),
   index("fiscal_invoice_events_invoice_idx").on(t.invoiceId),
 ]);
+
+/* ---------------------------------------------------------------------------------------------------------------------
+ * Comandas: o cliente escaneia o QR da comanda física e pede pelo celular; o pedido entra na conta e é cobrado no PDV.
+ * Tudo é de uma loja só (isolado por RLS). O link do QR é assinado (ver modules/comandas/token.ts) e a tela pública só
+ * funciona com a comanda aberta pelo balcão e com o celular dentro do raio da loja. Cada acesso e cada pedido vão para
+ * comanda_events, que guarda IP, aparelho e localização por 90 dias e depois é anonimizado.
+ * ------------------------------------------------------------------------------------------------------------------- */
+
+/** Configuração das comandas de uma loja: liga o recurso e define onde fica a loja (para barrar pedido de longe). */
+export const comandaSettings = pgTable("comanda_settings", {
+  storeId: uuid("store_id").primaryKey().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  enabled: boolean("enabled").default(false).notNull(),
+  requireLocation: boolean("require_location").default(true).notNull(),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  radiusMeters: integer("radius_meters").default(150).notNull(),
+  ...timestamps,
+}, (t) => [
+  check("comanda_settings_radius_valid", sql`${t.radiusMeters} BETWEEN 20 AND 2000`),
+  check("comanda_settings_coords_valid", sql`(${t.latitude} IS NULL AND ${t.longitude} IS NULL) OR (${t.latitude} BETWEEN -90 AND 90 AND ${t.longitude} BETWEEN -180 AND 180)`),
+]);
+
+/** A comanda física: um número e um QR fixos, que a loja reaproveita a cada atendimento. */
+export const comandas = pgTable("comandas", {
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  id: uuid("id").defaultRandom().primaryKey(),
+  number: integer("number").notNull(),
+  active: boolean("active").default(true).notNull(),
+  /** Entra na assinatura do link. Aumentar invalida o QR impresso (comanda perdida ou fotografada). */
+  tokenVersion: integer("token_version").default(1).notNull(),
+  ...timestamps,
+}, (t) => [uniqueIndex("comandas_store_number_uidx").on(t.storeId, t.number), index("comandas_store_idx").on(t.storeId), check("comandas_number_valid", sql`${t.number} BETWEEN 1 AND 9999`)]);
+
+/** Um atendimento: a comanda aberta para um jogador, até a conta ser cobrada (vira uma venda) ou cancelada. */
+export const comandaSessions = pgTable("comanda_sessions", {
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  id: uuid("id").defaultRandom().primaryKey(),
+  comandaId: uuid("comanda_id").notNull().references(() => comandas.id, { onDelete: "restrict" }),
+  playerId: uuid("player_id").notNull().references(() => players.id, { onDelete: "restrict" }),
+  status: varchar("status", { length: 10 }).default("OPEN").notNull(),
+  openedById: uuid("opened_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
+  closedById: uuid("closed_by_id").references(() => users.id, { onDelete: "restrict" }),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  saleId: integer("sale_id").references((): AnyPgColumn => sales.id, { onDelete: "restrict" }),
+  cancelReason: varchar("cancel_reason", { length: 200 }),
+  ...timestamps,
+}, (t) => [
+  uniqueIndex("comanda_sessions_one_open_uidx").on(t.comandaId).where(sql`${t.status} = 'OPEN'`),
+  index("comanda_sessions_store_status_idx").on(t.storeId, t.status),
+  index("comanda_sessions_comanda_idx").on(t.comandaId),
+  check("comanda_sessions_status_valid", sql`${t.status} IN ('OPEN','CLOSED','CANCELED')`),
+]);
+
+/** Celular que acessou a comanda (cookie próprio, guardado só como hash), com o que o navegador informa dele. */
+export const comandaDevices = pgTable("comanda_devices", {
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id").notNull().references(() => comandaSessions.id, { onDelete: "restrict" }),
+  secretHash: varchar("secret_hash", { length: 64 }).notNull(),
+  ip: varchar("ip", { length: 64 }),
+  userAgent: text("user_agent"),
+  deviceInfo: jsonb("device_info"),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  anonymizedAt: timestamp("anonymized_at", { withTimezone: true }),
+}, (t) => [index("comanda_devices_session_idx").on(t.sessionId), uniqueIndex("comanda_devices_secret_uidx").on(t.sessionId, t.secretHash)]);
+
+/** Um pedido: o que o cliente (ou o balcão) mandou de uma vez. Entra direto na conta; só o balcão cancela. */
+export const comandaOrders = pgTable("comanda_orders", {
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id").notNull().references(() => comandaSessions.id, { onDelete: "restrict" }),
+  source: varchar("source", { length: 10 }).notNull(),
+  deviceId: uuid("device_id").references(() => comandaDevices.id, { onDelete: "restrict" }),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "restrict" }),
+  /** Identifica o envio no celular, para um toque duplo ou uma rede ruim não gerar dois pedidos. */
+  requestId: uuid("request_id"),
+  status: varchar("status", { length: 10 }).default("NEW").notNull(),
+  note: varchar("note", { length: 200 }),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  deliveredById: uuid("delivered_by_id").references(() => users.id, { onDelete: "restrict" }),
+  canceledAt: timestamp("canceled_at", { withTimezone: true }),
+  canceledById: uuid("canceled_by_id").references(() => users.id, { onDelete: "restrict" }),
+  cancelReason: varchar("cancel_reason", { length: 200 }),
+  ...timestamps,
+}, (t) => [
+  index("comanda_orders_session_idx").on(t.sessionId),
+  index("comanda_orders_store_status_idx").on(t.storeId, t.status),
+  uniqueIndex("comanda_orders_request_uidx").on(t.sessionId, t.requestId).where(sql`${t.requestId} IS NOT NULL`),
+  check("comanda_orders_status_valid", sql`${t.status} IN ('NEW','DELIVERED','CANCELED')`),
+  check("comanda_orders_source_valid", sql`${t.source} IN ('CUSTOMER','COUNTER')`),
+]);
+
+/** Item do pedido, com o nome e o preço do momento (o cardápio pode mudar depois). */
+export const comandaOrderItems = pgTable("comanda_order_items", {
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id").notNull().references(() => comandaOrders.id, { onDelete: "restrict" }),
+  productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "restrict" }),
+  productName: varchar("product_name", { length: 180 }).notNull(),
+  unitPriceCents: integer("unit_price_cents").notNull(),
+  quantity: integer("quantity").notNull(),
+  canceledAt: timestamp("canceled_at", { withTimezone: true }),
+  canceledById: uuid("canceled_by_id").references(() => users.id, { onDelete: "restrict" }),
+  cancelReason: varchar("cancel_reason", { length: 200 }),
+}, (t) => [
+  index("comanda_order_items_order_idx").on(t.orderId),
+  index("comanda_order_items_product_idx").on(t.productId),
+  check("comanda_order_items_quantity_valid", sql`${t.quantity} BETWEEN 1 AND 99`),
+  check("comanda_order_items_price_valid", sql`${t.unitPriceCents} >= 0`),
+]);
+
+/** Auditoria das comandas: quem fez o quê, quando, de onde e de qual aparelho. Passados 90 dias, o IP e a posição são apagados. */
+export const comandaEvents = pgTable("comanda_events", {
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  id: uuid("id").defaultRandom().primaryKey(),
+  comandaId: uuid("comanda_id").references(() => comandas.id, { onDelete: "restrict" }),
+  sessionId: uuid("session_id").references(() => comandaSessions.id, { onDelete: "restrict" }),
+  orderId: uuid("order_id").references(() => comandaOrders.id, { onDelete: "restrict" }),
+  deviceId: uuid("device_id").references(() => comandaDevices.id, { onDelete: "restrict" }),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "restrict" }),
+  type: varchar("type", { length: 40 }).notNull(),
+  outcome: varchar("outcome", { length: 10 }).default("OK").notNull(),
+  ip: varchar("ip", { length: 64 }),
+  userAgent: text("user_agent"),
+  deviceInfo: jsonb("device_info"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  accuracyMeters: real("accuracy_meters"),
+  distanceMeters: integer("distance_meters"),
+  details: jsonb("details"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  anonymizedAt: timestamp("anonymized_at", { withTimezone: true }),
+}, (t) => [
+  index("comanda_events_store_created_idx").on(t.storeId, t.createdAt),
+  index("comanda_events_session_idx").on(t.sessionId),
+  index("comanda_events_comanda_idx").on(t.comandaId),
+  check("comanda_events_outcome_valid", sql`${t.outcome} IN ('OK','BLOCKED','FAILED')`),
+]);
+
+/** Contador de tentativas por janela, para barrar abuso nas telas públicas. A chave é um hash (nunca o IP puro). */
+export const rateLimits = pgTable("rate_limits", {
+  key: varchar("key", { length: 160 }).primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).defaultNow().notNull(),
+  hits: integer("hits").default(0).notNull(),
+}, (t) => [index("rate_limits_window_idx").on(t.windowStart)]);

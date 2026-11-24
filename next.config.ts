@@ -24,11 +24,21 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "same-origin" },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
-          },
         ],
+      },
+      // Câmera, microfone e localização ficam bloqueados em todo o sistema, exceto onde as comandas precisam da localização:
+      // a tela pública do cliente (confere que ele está na loja) e a configuração, onde o administrador marca onde a loja fica.
+      {
+        source: "/((?!pedidos|admin/comandas/configuracoes).*)",
+        headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" }],
+      },
+      {
+        source: "/pedidos/:path*",
+        headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" }],
+      },
+      {
+        source: "/admin/comandas/configuracoes",
+        headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" }],
       },
       {
         source: "/sw.js",

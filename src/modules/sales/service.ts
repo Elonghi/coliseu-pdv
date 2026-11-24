@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 import { calculateDiscount, saleNumber } from "@/lib/money";
 import { checkoutSchema, type CheckoutInput } from "./schemas";
 import { applyPlayerCreditMovement } from "@/modules/players/service";
+import { closeSessionWithSale, lockSessionForSale } from "@/modules/comandas/service";
 
 type LockedProduct = { id: string; sku: string; name: string; active: boolean; stock_quantity: number; sale_price_cents: number; cost_cents: number; max_discount_bps: number; unit_code: string };
 
@@ -16,6 +17,8 @@ export async function createSale(input: CheckoutInput, operatorId: string) {
   try {
     await client.query("BEGIN");
     await requireActiveStore(client);
+    // Travas sempre na mesma ordem (comanda, depois produtos), igual ao pedido do cliente, para os dois nunca se esperarem em círculo.
+    const comandaSession = parsed.comandaSessionId ? await lockSessionForSale(client, parsed.comandaSessionId, parsed.items) : null;
     await lockProducts(client, productIds);
     const locked = await client.query<LockedProduct>(`SELECT p.id,p.sku,p.name,p.active,COALESCE(ps.quantity,0)::int AS stock_quantity,p.sale_price_cents,COALESCE(ps.cost_cents,p.cost_cents)::int AS cost_cents,p.max_discount_bps,u.code AS unit_code FROM products p JOIN units u ON u.id=p.unit_id LEFT JOIN product_stock ps ON ps.product_id=p.id AND ps.store_id=app_current_store() WHERE p.id=ANY($1::uuid[]) ORDER BY p.id FOR UPDATE OF p`, [[...productIds].sort()]);
     if (locked.rowCount !== parsed.items.length) throw new AppError("Um produto do carrinho não existe.", 422, "PRODUCT_NOT_FOUND");
@@ -76,7 +79,8 @@ export async function createSale(input: CheckoutInput, operatorId: string) {
       }
       paymentSummary.push({ ...payment, changeCents: change });
     }
-    await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'SALE_CREATE','sale',$2,$3)", [operatorId, String(sale.id), JSON.stringify({ totalCents })]);
+    if (comandaSession && parsed.comandaSessionId) await closeSessionWithSale(client, comandaSession, parsed.comandaSessionId, sale.id, operatorId, totalCents);
+    await client.query("INSERT INTO audit_logs (user_id,action,entity_type,entity_id,after) VALUES ($1,'SALE_CREATE','sale',$2,$3)", [operatorId, String(sale.id), JSON.stringify({ totalCents, comandaSessionId: parsed.comandaSessionId ?? null })]);
     await client.query("COMMIT");
     return { id: sale.id, number: saleNumber(sale.id), createdAt: sale.created_at, subtotalCents, discountCents, totalCents, payments: paymentSummary };
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }

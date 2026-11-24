@@ -68,20 +68,32 @@ suite("script que reabre as notas para entrada de estoque", () => {
     const settlementId = (await pool.query<{ id: string }>("SELECT id FROM financial_settlements LIMIT 1")).rows[0].id;
     const bankImport = (await pool.query<{ id: string }>("INSERT INTO bank_imports(file_name,imported_by_id) VALUES ('extrato.ofx',$1) RETURNING id", [adminId])).rows[0].id;
     await pool.query("INSERT INTO bank_transactions(import_id,external_id,occurred_on,amount_cents,settlement_id,reconciled_at,reconciled_by_id) VALUES ($1,'T1','2026-10-10',-1000,$2,now(),$3)", [bankImport, settlementId, adminId]);
+
+    // Comandas (migration 0020): uma conta cobrada pelo PDV, com pedido, aparelho e auditoria. A venda e a abertura se referenciam
+    // (a venda guarda a abertura e a abertura guarda a venda), e o reset precisa passar por isso sem falhar.
+    const comandaId = (await pool.query<{ id: string }>("INSERT INTO comandas(number) VALUES (7) RETURNING id")).rows[0].id;
+    const playerId = (await pool.query<{ id: string }>("SELECT id FROM players LIMIT 1")).rows[0].id;
+    const sessionId = (await pool.query<{ id: string }>("INSERT INTO comanda_sessions(comanda_id,player_id,opened_by_id) VALUES ($1,$2,$3) RETURNING id", [comandaId, playerId, adminId])).rows[0].id;
+    const orderId = (await pool.query<{ id: string }>("INSERT INTO comanda_orders(session_id,source,status) VALUES ($1,'COUNTER','DELIVERED') RETURNING id", [sessionId])).rows[0].id;
+    await pool.query("INSERT INTO comanda_order_items(order_id,product_id,product_name,unit_price_cents,quantity) VALUES ($1,$2,'Item da comanda',$3,1)", [orderId, product.id, product.sale_price_cents]);
+    await pool.query("INSERT INTO comanda_devices(session_id,secret_hash) VALUES ($1,'hash')", [sessionId]);
+    await pool.query("INSERT INTO comanda_events(comanda_id,session_id,order_id,type) VALUES ($1,$2,$3,'ORDER_CREATED')", [comandaId, sessionId, orderId]);
+    await pool.query("UPDATE product_stock SET quantity=quantity+1 WHERE product_id=$1", [product.id]); // repõe a unidade que a venda da comanda vai tirar
+    await createSale({ items: [{ productId: product.id, quantity: 1, discountBasisPoints: 0 }], payments: [{ methodCode: "PIX", amountAppliedCents: product.sale_price_cents }], comandaSessionId: sessionId }, operatorId);
   });
 
   it("recusa rodar quando existe mais de um lojista, para nunca apagar os dados de outros clientes", async () => {
     await pool.query("INSERT INTO accounts(name) VALUES ('Outro lojista')");
     expect(() => run()).toThrow(/único lojista/);
     expect(() => run(["--apply", `--db=${databaseName()}`], { CONFIRM_REOPEN_INVOICES: confirmation })).toThrow(/único lojista/);
-    expect(await count("sales")).toBe(1);
+    expect(await count("sales")).toBe(2); // a venda comum e a que cobrou a comanda
   });
 
   it("a simulação mostra os números e não grava nada", async () => {
     const output = run();
     expect(output).toContain("SIMULAÇÃO");
     expect(output).toContain("NADA foi gravado");
-    expect(await count("sales")).toBe(1);
+    expect(await count("sales")).toBe(2); // a venda comum e a que cobrou a comanda
     expect(await count("financial_settlements")).toBe(1);
     expect((await pool.query("SELECT stock_quantity FROM products")).rows[0].stock_quantity).toBe(1);
     expect((await pool.query("SELECT stock_imported_at FROM fiscal_invoice_items")).rows[0].stock_imported_at).not.toBeNull();
@@ -93,7 +105,7 @@ suite("script que reabre as notas para entrada de estoque", () => {
     expect(() => run(["--apply", `--db=${databaseName()}`])).toThrow(/CONFIRM_REOPEN_INVOICES/);
     expect(() => run(["--apply", "--db=outro_banco"], { CONFIRM_REOPEN_INVOICES: confirmation })).toThrow(/--db=/);
     expect(() => run(["--apply"], { CONFIRM_REOPEN_INVOICES: confirmation })).toThrow(/--db=/);
-    expect(await count("sales")).toBe(1);
+    expect(await count("sales")).toBe(2); // a venda comum e a que cobrou a comanda
     expect(await count("products")).toBe(1);
     expect(existsSync(path.join(storage, imageKey))).toBe(true);
   });
@@ -104,6 +116,8 @@ suite("script que reabre as notas para entrada de estoque", () => {
 
     for (const table of ["sales", "sale_items", "payments", "cash_sessions", "cash_movements", "stock_movements", "financial_settlements", "purchase_orders", "inventory_counts", "player_credit_movements"]) expect(await count(table)).toBe(0);
     expect(await count("products")).toBe(0);
+    for (const table of ["comanda_sessions", "comanda_orders", "comanda_order_items", "comanda_devices", "comanda_events"]) expect(await count(table), table).toBe(0);
+    expect(await count("comandas")).toBe(1); // as comandas cadastradas ficam
     expect(await count("supplier_product_mappings")).toBe(0);
     expect(existsSync(path.join(storage, imageKey))).toBe(false);
     expect(output).toContain("1 foto(s) de produto removida(s)");
