@@ -110,6 +110,7 @@ test.describe.serial("fluxos essenciais", () => {
     await login(page, adminEmail, seedPassword);
     for (const [path, heading] of [
       ["/admin/cash", "Caixas"],
+      ["/admin/printers", "Impressoras"],
       ["/admin/inventory", "Inventários"],
       ["/admin/purchases", "Pedidos de compra"],
       ["/admin/labels", "Etiquetas"],

@@ -23,6 +23,7 @@
     "db:link-default-store": "tsx src/scripts/link-default-store.ts",
     "sefaz:sync": "tsx src/scripts/sefaz-sync.ts",
     "sefaz:worker": "tsx src/scripts/sefaz-worker.ts",
+    "agent:build-windows": "node agent/build-windows.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"

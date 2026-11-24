@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["pdfkit"],
   outputFileTracingIncludes: {
+    "/api/print/agent/script": ["./agent/coliseu-print-agent.mjs"],
     "/api/fiscal/invoices/*/pdf": [
       "./node_modules/pdfkit/js/standard-fonts/**/*.cjs",
       "./node_modules/pdfkit/js/data/sRGB_IEC61966_2_1.icc",

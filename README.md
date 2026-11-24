@@ -65,6 +65,21 @@ npm run sefaz:sync
 
 O serviço `sefaz-worker` executa a sincronização automática e respeita o intervalo mínimo de 60 minutos quando não há novos documentos. A tela fica em `/admin/fiscal`.
 
+## Impressão térmica (comprovante de venda)
+
+O PDV imprime o comprovante da venda em impressoras térmicas ESC/POS (por exemplo, a POS-8370 de 80 mm), tanto em caixas Windows quanto Linux. O comprovante não é fiscal e sai com "NÃO É DOCUMENTO FISCAL"; o DANFE da NFC-e pode virar mais um layout quando o sistema emitir NFC-e.
+
+- O servidor monta os bytes ESC/POS (`src/modules/printing`) e grava na fila `print_jobs`. Layout, acentos e largura mudam com o deploy, sem mexer nos caixas.
+- No computador onde a impressora está ligada roda o agente `agent/coliseu-print-agent.mjs` (Node.js 20+, sem dependências). Ele abre a conexão para o servidor (long-poll em `/api/print/agent/next`), repassa os bytes à impressora e responde se imprimiu. Por sair do caixa para o servidor, não precisa abrir porta nem dar permissão de "rede local" no navegador.
+- Linux: fila do CUPS em modo raw (`lp -o raw`). Windows: spooler em modo RAW (`WritePrinter`, via PowerShell). Também aceita `/dev/usb/lpN` e `tcp://ip:9100`.
+- Windows: `npm run agent:build-windows` gera em `agent/dist` (não versionado) o `coliseu-print-agent.exe` (Node SEA, ~85 MB, sem precisar de Node no caixa) e o instalador `coliseu-print-agent-setup-<versão>.exe` (NSIS, ~21 MB). O script baixa uma vez o `node.exe` oficial da mesma versão do Node local, confere o SHA-256, embute o agente com o `postject` e compila `agent/installer.nsi`; o NSIS precisa estar instalado (`sudo apt install nsis` ou nsis.sourceforge.io). Com `-- --server https://...`, o instalador já vem com o endereço preenchido.
+- O instalador pede o endereço e o token e confere os dois no servidor (`GET /api/print/agent/hello`, que não mexe na fila), lista as impressoras do Windows, instala em `Arquivos de Programas\Coliseu PDV\Impressao`, grava o `config.json` legível só por administradores e pelo sistema, cria a tarefa do Agendador que liga o agente com o Windows (como sistema, sem janela) e oferece uma página de teste. Reinstalar por cima atualiza e, com o token em branco, mantém o atual. Desinstala por "Aplicativos instalados". Também instala em silêncio: `setup.exe /S /SERVER=https://... /TOKEN=cpa1... /PRINTER="POS-8370"`. O registro fica em `coliseu-print-agent.log`, na pasta do agente.
+- Cadastro em **Operação → Impressoras** (`/admin/printers`): gera o token (só o hash fica no banco) e o `config.json` do agente, mostra se o agente está conectado, imprime página de teste e reimprime comprovantes. Cada navegador de caixa escolhe a sua impressora no fim da venda e pode imprimir automaticamente.
+- O token do agente leva a loja e a impressora (`cpa1.<loja>.<impressora>.<segredo>`) para o servidor abrir o escopo certo do banco antes de conferir o segredo; as tabelas novas seguem o isolamento por loja (RLS e gatilhos de mesma loja na migration `0021_impressao_termica`).
+- Pedidos que o agente não busca em 10 minutos expiram, para o caixa não imprimir uma pilha de cupons antigos ao religar.
+
+Ordem de produção (ver `docs/RUNBOOK_MIGRACAO.md`): primeiro envio só com a migration `0021` e o `schema.ts`, aplicar a migration, depois o envio com o código. Se o código subir antes, o PDV continua vendendo sem impressão, mas a tela de impressoras depende da tabela.
+
 ## Backup, restauração e monitoramento
 
 O Compose local e o Compose do Coolify possuem o serviço de manutenção `backup`, que gera um dump PostgreSQL em formato customizado, compacta as fotos e grava checksums em um volume separado. Agende no Coolify a execução diária:

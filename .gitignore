@@ -11,3 +11,9 @@ storage/*
 *.log
 *.tsbuildinfo
 .DS_Store
+
+# Configuração local do agente de impressão (contém o token)
+agent/config.json
+# Executável do agente e downloads usados para gerá-lo (npm run agent:build-windows)
+agent/dist/
+agent/.cache/
