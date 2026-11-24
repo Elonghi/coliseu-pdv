@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, date, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, real, text, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, customType, date, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, real, text, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const userRole = pgEnum("user_role", ["ADMIN", "OPERATOR"]);
 export const saleStatus = pgEnum("sale_status", ["CONFIRMED", "CANCELED"]);
@@ -14,6 +14,7 @@ export const cashSessionStatus = pgEnum("cash_session_status", ["OPEN", "CLOSED"
 export const cashMovementType = pgEnum("cash_movement_type", ["SUPPLY", "WITHDRAWAL"]);
 export const inventoryCountStatus = pgEnum("inventory_count_status", ["OPEN", "FINALIZED", "CANCELED"]);
 export const purchaseOrderStatus = pgEnum("purchase_order_status", ["DRAFT", "SENT", "PARTIAL", "RECEIVED", "CANCELED"]);
+export const printJobStatus = pgEnum("print_job_status", ["QUEUED", "SENT", "PRINTED", "FAILED"]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -723,3 +724,52 @@ export const rateLimits = pgTable("rate_limits", {
   windowStart: timestamp("window_start", { withTimezone: true }).defaultNow().notNull(),
   hits: integer("hits").default(0).notNull(),
 }, (t) => [index("rate_limits_window_idx").on(t.windowStart)]);
+
+/* O Drizzle desta versão não tem bytea; o driver pg já entrega e recebe Buffer. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+/* Impressoras térmicas dos caixas. Cada uma é atendida por um agente local (agent/) que se autentica com o token desta
+ * linha (só o hash fica gravado), busca os trabalhos da fila e repassa os bytes ESC/POS à impressora. */
+export const printTerminals = pgTable("print_terminals", {
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 80 }).notNull(),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  columns: integer("columns").default(48).notNull(),
+  codePage: varchar("code_page", { length: 10 }).default("CP860").notNull(),
+  cut: boolean("cut").default(true).notNull(),
+  active: boolean("active").default(true).notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  agentInfo: varchar("agent_info", { length: 200 }),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "restrict" }),
+  ...timestamps,
+}, (t) => [
+  index("print_terminals_store_idx").on(t.storeId),
+  uniqueIndex("print_terminals_store_name_lower_uidx").on(t.storeId, sql`lower(${t.name})`),
+  uniqueIndex("print_terminals_token_hash_uidx").on(t.tokenHash),
+  check("print_terminals_columns_valid", sql`${t.columns} BETWEEN 24 AND 80`),
+  check("print_terminals_code_page_valid", sql`${t.codePage} IN ('CP860','CP850','WPC1252','ASCII')`),
+]);
+
+/* Fila de impressão. O conteúdo já vai pronto em ESC/POS; o agente só repassa. QUEUED espera o agente, SENT foi entregue
+ * a ele, PRINTED/FAILED é a resposta do agente (ou FAILED quando expira sem ninguém buscar). */
+export const printJobs = pgTable("print_jobs", {
+  storeId: uuid("store_id").notNull().default(sql`app_current_store()`).references(() => stores.id, { onDelete: "restrict" }),
+  id: uuid("id").defaultRandom().primaryKey(),
+  terminalId: uuid("terminal_id").notNull().references(() => printTerminals.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 30 }).notNull(),
+  saleId: integer("sale_id").references(() => sales.id, { onDelete: "restrict" }),
+  payload: bytea("payload").notNull(),
+  status: printJobStatus("status").default("QUEUED").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  error: text("error"),
+  requestedById: uuid("requested_by_id").references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (t) => [
+  index("print_jobs_store_idx").on(t.storeId),
+  index("print_jobs_terminal_queue_idx").on(t.terminalId, t.status, t.createdAt),
+  index("print_jobs_sale_idx").on(t.saleId),
+  check("print_jobs_kind_valid", sql`${t.kind} IN ('SALE_RECEIPT','TEST')`),
+]);

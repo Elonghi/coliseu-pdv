@@ -59,6 +59,9 @@ export const tenancy = {
   comanda_order_items: "STORE",
   comanda_events: "STORE",
   rate_limits: "GLOBAL",
+  // Impressão térmica (migração 0021).
+  print_terminals: "STORE",
+  print_jobs: "STORE",
   // Integração SAE NFC-e (migração 0014, em andamento).
   sae_nfce_sync_states: "STORE",
   sae_nfce_keys: "STORE",

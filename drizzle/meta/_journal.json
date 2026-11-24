@@ -148,6 +148,13 @@
       "when": 1795538574463,
       "tag": "0020_comandas",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795556100777,
+      "tag": "0021_impressao_termica",
+      "breakpoints": true
     }
   ]
 }
